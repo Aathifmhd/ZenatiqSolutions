@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://zenatiq-solutions.web.app/sitemap.xml
