@@ -1,6 +1,6 @@
 /* Zenatiq Solutions: site behaviour (no dependencies) */
 (() => {
-  const WA_NUMBER = '94769442270';
+  const WA_NUMBER = '94758112170';
   const waLink = text => `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(text)}`;
 
   /* footer year */
