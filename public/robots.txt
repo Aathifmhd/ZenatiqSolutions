@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://zenatiq-solutions.web.app/sitemap.xml
+Sitemap: https://zenatiq-solutions.vercel.app/sitemap.xml
