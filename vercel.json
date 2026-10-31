@@ -24,7 +24,7 @@
       "headers": [{ "key": "X-Frame-Options", "value": "SAMEORIGIN" }]
     },
     {
-      "source": "/(admin|connect|api)(.*)",
+      "source": "/(admin|connect|api|renew|license)(.*)",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
     }
   ]

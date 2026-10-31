@@ -72,7 +72,8 @@ export function passwordEmail({ member, password, by, welcome }) {
 
 // A renewal reminder to a client. stage: "before" the paid-until date, the day after it "ended",
 // or "expired" once the grace days have run out. left: days from today to the paid-until date.
-export function renewalEmail({ sub, project, client, to, stage, left }) {
+// link: the client's renewal page.
+export function renewalEmail({ sub, project, client, to, stage, left, link = null }) {
   const until = longDate(sub.ends_on);
   const what = `${sub.package} for ${project.name}`;
   const yearly = price(sub.price, sub.currency);
@@ -89,15 +90,35 @@ export function renewalEmail({ sub, project, client, to, stage, left }) {
       `Your ${what} was paid until ${until}, and the extra days to renew have now run out.`,
       `Please renew it (${yearly} a year) to keep using it.`],
   }[stage];
-  const howTo = `To renew, message us on WhatsApp at ${WHATSAPP}${process.env.MAIL_REPLY_TO?.trim() ? ' or reply to this email' : ''}.`;
+  const howTo = link
+    ? `Renew online or by bank transfer at ${link}. Questions? Message us on WhatsApp at ${WHATSAPP}${process.env.MAIL_REPLY_TO?.trim() ? ' or reply to this email' : ''}.`
+    : `To renew, message us on WhatsApp at ${WHATSAPP}${process.env.MAIL_REPLY_TO?.trim() ? ' or reply to this email' : ''}.`;
   const hello = `Hi ${client?.contact_name || client?.name || project.name},`;
   const text = [hello, '', ...lines, '', howTo, '', 'Thank you,', 'Zenatiq Solutions'].join('\n');
+  const button = (href, label) => `<a href="${esc(href)}" style="display:inline-block;padding:11px 20px;border-radius:999px;background:#e10600;color:#fff;font-weight:bold;text-decoration:none">${label}</a>`;
   const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1f;max-width:520px">
 <p>${esc(hello)}</p>
 ${lines.map((line) => `<p>${esc(line)}</p>`).join('\n')}
-<p style="margin:18px 0"><a href="https://wa.me/${WHATSAPP.replace(/\D/g, '')}" style="display:inline-block;padding:11px 20px;border-radius:999px;background:#e10600;color:#fff;font-weight:bold;text-decoration:none">Renew on WhatsApp</a></p>
-<p style="color:#666">${esc(howTo)}</p>
+<p style="margin:18px 0">${link ? button(link, 'Renew now') : button(`https://wa.me/${WHATSAPP.replace(/\D/g, '')}`, 'Renew on WhatsApp')}</p>
+<p style="color:#666">${link ? `You can pay online or by bank transfer. Questions? Message us on WhatsApp at ${WHATSAPP}.` : esc(howTo)}</p>
 <p>Thank you,<br>Zenatiq Solutions</p>
 </div>`;
   return { to, subject, text, html };
+}
+
+// The thank-you after a client renews online.
+export function renewedEmail({ sub, project, client, to, until, amount, reference }) {
+  const hello = `Hi ${client?.contact_name || client?.name || project.name},`;
+  const lines = [
+    `Thank you! We've received your payment of ${price(amount, sub.currency)}.`,
+    `Your ${sub.package} for ${project.name} is now paid until ${longDate(until)}.`,
+    `Payment reference: ${reference}`,
+  ];
+  const text = [hello, '', ...lines, '', 'Zenatiq Solutions'].join('\n');
+  const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1f;max-width:520px">
+<p>${esc(hello)}</p>
+${lines.map((line) => `<p>${esc(line)}</p>`).join('\n')}
+<p>Zenatiq Solutions</p>
+</div>`;
+  return { to, subject: `Renewed: ${project.name} is paid until ${longDate(until)}`, text, html };
 }

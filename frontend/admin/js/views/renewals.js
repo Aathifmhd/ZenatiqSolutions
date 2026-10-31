@@ -10,7 +10,7 @@ export async function render(ctx) {
   const { el, db, store } = ctx;
   ctx.title = 'Renewals';
   await store.load();
-  const { subscriptions, remindersRanAt } = await db.subscriptions.list();
+  const [{ subscriptions, remindersRanAt, setup }, settings] = await Promise.all([db.subscriptions.list(), db.subscriptions.settings()]);
   if (!ctx.isCurrent()) return;
 
   const rows = subscriptions.map((s) => ({ s, p: store.project(s.project_id) })).filter((r) => r.p)
@@ -59,7 +59,37 @@ export async function render(ctx) {
           : html`Automatic reminder emails haven't run yet. They start once <code>CRON_SECRET</code> is set in Vercel (see ADMIN-SETUP.md).`}</span></p>
         <button class="btn btn--ghost btn--sm" type="button" data-act="run">Send today's reminders now</button>
       </footer>
+    </section>
+    <section class="card renewpage">
+      <header class="card__head"><h2>Renewal page</h2>
+        ${rows[0]?.s.renew_url ? html`<a class="link-sm" href="${rows[0].s.renew_url.replace(/^https:\/\/www\.zenatiqsolutions\.com/, location.origin)}" target="_blank" rel="noopener">Preview a client's page ${icon('external')}</a>` : ''}</header>
+      <p class="small muted">Each client renews on their own page, linked from their reminder emails and their Contact with Zenatiq widget. They choose how many years, then pay online or by bank transfer.</p>
+      <ul class="renewpage__setup">
+        <li class="${setup.online ? 'is-on' : ''}">${icon(setup.online ? 'check' : 'clock')}<span>${setup.online
+          ? html`Online payments are on${setup.sandbox ? html` in <b>PayHere test mode</b>: no real money is taken` : ''}. Paid renewals go through by themselves.`
+          : html`Online payments are off. They start once <code>PAYHERE_MERCHANT_ID</code> and <code>PAYHERE_MERCHANT_SECRET</code> are set in Vercel.`}</span></li>
+        <li class="${setup.licenses ? 'is-on' : ''}">${icon(setup.licenses ? 'check' : 'clock')}<span>${setup.licenses
+          ? 'Licences are on: client systems can check whether their subscription is paid.'
+          : html`Licences are off. They start once <code>LICENSE_PRIVATE_KEY</code> is set in Vercel.`}</span></li>
+      </ul>
+      <form class="renewpage__bank" data-submit="bank">
+        <label class="field"><span>Bank transfer details</span>
+          <textarea class="input" name="bank_details" rows="5" maxlength="2000" placeholder="Bank: …&#10;Branch: …&#10;Account name: Zenatiq Solutions&#10;Account number: …">${settings.bank_details || ''}</textarea>
+          <small class="field__hint">Shown to clients on their renewal page, exactly as typed here.</small></label>
+        <button class="btn btn--primary btn--sm" type="submit">Save bank details</button>
+      </form>
     </section>`, {
+    bank: async (form) => {
+      const button = form.querySelector('[type=submit]');
+      button.disabled = true;
+      try {
+        await db.subscriptions.saveSettings(new FormData(form).get('bank_details'));
+        toast('Bank details saved');
+      } catch (err) {
+        toast(friendly(err), 'error');
+      }
+      button.disabled = false;
+    },
     open: (row) => ctx.go(`#/projects/${row.dataset.id}/payments`),
     show: (btn) => { showAll = btn.dataset.show === 'all'; remember('zq-renewals', showAll ? 'all' : 'due'); draw(); },
     renew: async (btn) => {

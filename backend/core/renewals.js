@@ -4,6 +4,11 @@
 export const ZONE = 'Asia/Colombo';
 export const SOON_DAYS = 30;
 export const REMIND_BEFORE = [30, 14, 7, 1];
+export const SITE = 'https://www.zenatiqsolutions.com';
+
+// The renewal page for a subscription, opened with its secret token (in reminder emails and the
+// clients' widget).
+export const renewUrl = (sub, site = SITE) => (sub?.renew_token ? `${site}/renew?t=${sub.renew_token}` : null);
 
 // Today in Sri Lanka, as "YYYY-MM-DD".
 export const today = (at = new Date()) =>
@@ -49,9 +54,12 @@ export function dueReminder(sub, day = today()) {
   return (sub.reminders || []).includes(key) ? null : { stage: due.stage, key, left };
 }
 
-// What the portal shows: the subscription with its status and days left, without the
-// reminder bookkeeping.
+// What the portal shows: the subscription with its status, days left and renewal link, without
+// the reminder bookkeeping.
 export function withStatus(sub, day = today()) {
   const { reminders, ...shown } = sub;
-  return { ...shown, status: statusOf(sub, day), days_left: daysBetween(day, sub.ends_on) };
+  return { ...shown, status: statusOf(sub, day), days_left: daysBetween(day, sub.ends_on), renew_url: renewUrl(sub) };
 }
+
+// The last day the client can still renew before the system turns read-only.
+export const graceUntil = (sub) => addDays(sub.ends_on, sub.grace_days);

@@ -6,6 +6,9 @@
  * Floating button:   <script src="https://www.zenatiqsolutions.com/connect/widget.js" data-key="PROJECT_KEY" defer></script>
  * Inside a page:     <div id="zenatiq-connect"></div> + the script tag with data-mode="inline"
  * Optional:          data-position="left" puts the floating button on the left.
+ *                    data-banner="off" hides the renewal banner along the top of the page.
+ * For a yearly subscription, a Subscription tab shows what's paid, with a Renew button, and the
+ * floating version shows a banner when renewal is near or overdue.
  */
 (() => {
   'use strict';
@@ -23,6 +26,8 @@
   const CATEGORIES = [['bug', 'Something is broken'], ['update', 'I need a change'], ['question', 'A question'], ['other', 'Something else']];
   const CATEGORY = { bug: 'Bug', update: 'Update request', question: 'Question', other: 'Other' };
   const STATUS = { open: 'Open', in_progress: 'In progress', resolved: 'Resolved' };
+  const SUB_STATUS = { active: 'Active', ending: 'Ending soon', grace: 'Renewal due', expired: 'Expired', cancelled: 'Stopped' };
+  const ATTENTION = ['ending', 'grace', 'expired'];
 
   const saved = {
     get: (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
@@ -63,6 +68,10 @@
     return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   };
   const time = (ts) => new Date(ts).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  // Paid-until dates read the same as on the renewal page and in Zenatiq's emails: 26 October 2026.
+  const longDate = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const money = (n, currency) => `${currency} ${Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+  const days = (n) => `${n} day${n === 1 ? '' : 's'}`;
 
   // --- Talking to Zenatiq --------------------------------------------------------
   // Sent as text/plain so browsers don't need an extra permission check (CORS preflight) first.
@@ -93,15 +102,21 @@
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.append(h('style', {}, css()));
 
-  const state = { open: mode !== 'floating', view: 'list', threads: [], thread: null, messages: [], project: '', unread: 0, error: '' };
+  const state = { open: mode !== 'floating', view: 'list', threads: [], thread: null, messages: [], project: '', unread: 0, error: '', sub: null };
   const body = h('div', { class: 'body', 'aria-live': 'polite' });
   const titleSub = h('span', { class: 'sub' }, '');
   const closeBtn = h('button', { class: 'icon-btn close', type: 'button', 'aria-label': 'Close', onclick: () => toggle(false) }, icon(I.close));
+  // Messages and, for a yearly subscription, the Subscription tab.
+  const msgTab = h('button', { class: 'tab', type: 'button', onclick: () => { go('list'); refresh(); } }, 'Messages');
+  const subDot = h('span', { class: 'dot', hidden: true });
+  const subTab = h('button', { class: 'tab', type: 'button', onclick: () => go('subscription') }, 'Subscription', subDot);
+  const tabs = h('nav', { class: 'tabs', 'aria-label': 'Contact with Zenatiq', hidden: true }, msgTab, subTab);
   const panel = h('section', { class: 'panel', role: mode === 'floating' ? 'dialog' : 'region', 'aria-label': 'Contact with Zenatiq', hidden: !state.open },
     h('header', { class: 'top' },
       h('img', { class: 'logo', src: `${base}/assets/zenatiq-icon-192.png`, alt: '', width: '36', height: '36' }),
       h('div', { class: 'title' }, h('b', {}, 'Contact with Zenatiq'), titleSub),
       mode === 'floating' ? closeBtn : null),
+    tabs,
     body,
     h('footer', { class: 'foot' }, 'Powered by ', h('a', { href: 'https://www.zenatiqsolutions.com', target: '_blank', rel: 'noopener' }, 'Zenatiq Solutions')));
   const badge = h('span', { class: 'count', hidden: true }, '0');
@@ -124,10 +139,54 @@
   // --- Views ---------------------------------------------------------------------------
   function render() {
     body.replaceChildren();
+    tabs.hidden = !state.sub || state.error || !['list', 'subscription'].includes(state.view);
+    msgTab.classList.toggle('on', state.view === 'list');
+    subTab.classList.toggle('on', state.view === 'subscription');
+    subDot.hidden = !state.sub || !ATTENTION.includes(state.sub.status);
     if (state.error) return body.append(errorView());
     if (state.view === 'new') return body.append(newView());
     if (state.view === 'thread' && state.thread) return body.append(threadView());
+    if (state.view === 'subscription' && state.sub) return body.append(subscriptionView());
     body.append(listView());
+  }
+
+  // What the client's yearly subscription covers, and how far it's paid.
+  function subMessage(s) {
+    const until = longDate(s.paid_until);
+    if (s.status === 'ending') return `It ends ${s.days_left === 0 ? 'today' : `in ${days(s.days_left)}`}. Renew now to keep it running without a break.`;
+    if (s.status === 'grace') return `It ended on ${until}. Renew within ${days(Math.max(s.grace_days + s.days_left + 1, 0))} to avoid any interruption.`;
+    if (s.status === 'expired') return `It ended on ${until}. Renew it to keep using everything.`;
+    if (s.status === 'cancelled') return `This subscription was stopped. It's paid until ${until}.`;
+    return `Your subscription is paid until ${until}.`;
+  }
+  function subscriptionView() {
+    const s = state.sub;
+    return h('div', { class: 'subview' },
+      h('div', { class: 'subcard' },
+        h('div', { class: 'row' }, h('b', { class: 'subname' }, s.package), h('span', { class: `pill sub ${s.status}` }, SUB_STATUS[s.status] || s.status)),
+        h('dl', { class: 'facts' },
+          h('div', {}, h('dt', {}, 'Paid until'), h('dd', {}, longDate(s.paid_until))),
+          h('div', {}, h('dt', {}, 'Yearly price'), h('dd', {}, money(s.price, s.currency)))),
+        h('p', { class: `subnote ${ATTENTION.includes(s.status) ? 'warn' : ''}` }, subMessage(s)),
+        s.renew_url ? h('a', { class: 'btn wide', href: s.renew_url, target: '_blank', rel: 'noopener' }, 'Renew now') : null),
+      h('p', { class: 'hint' }, 'Renewing early adds the new year after the current one, so you never lose days. Pay online or by bank transfer.'));
+  }
+
+  // Floating version only: a banner along the top of the page while renewal is near or overdue.
+  // Closing it hides it for the rest of the day.
+  function showBanner(s) {
+    if (mode !== 'floating' || script.dataset.banner === 'off' || !ATTENTION.includes(s.status) || !s.renew_url) return;
+    const dismissed = `zq-banner-${s.status}-${new Date().toISOString().slice(0, 10)}`;
+    if (saved.get(dismissed)) return;
+    const text = s.status === 'ending'
+      ? `Your ${s.package} subscription ends ${s.days_left === 0 ? 'today' : `in ${days(s.days_left)}`}.`
+      : s.status === 'grace'
+        ? `Your ${s.package} subscription has ended. Renew within ${days(Math.max(s.grace_days + s.days_left + 1, 0))}.`
+        : `Your ${s.package} subscription has expired.`;
+    const banner = h('div', { class: `banner ${s.status === 'ending' ? '' : 'urgent'}`, role: 'status' },
+      h('span', {}, text), h('a', { href: s.renew_url, target: '_blank', rel: 'noopener' }, 'Renew now'),
+      h('button', { class: 'icon-btn x', type: 'button', 'aria-label': 'Hide until tomorrow', onclick: () => { saved.set(dismissed, '1'); banner.remove(); } }, icon(I.close)));
+    shadow.append(banner);
   }
 
   function errorView() {
@@ -262,7 +321,7 @@
         await loadThreads();
         const current = state.threads.find((t) => t.id === state.thread.id);
         if (current && current.status !== state.thread.status) { state.thread = current; render(); }
-      } else if (state.view === 'list') {
+      } else if (state.view === 'list' || state.view === 'subscription') {
         await loadThreads();
         render();
       }
@@ -276,7 +335,7 @@
   let timer;
   function schedule() {
     clearTimeout(timer);
-    const wait = !state.open ? 60000 : state.view === 'thread' ? 8000 : state.view === 'list' ? 15000 : 0;
+    const wait = !state.open ? 60000 : state.view === 'thread' ? 8000 : ['list', 'subscription'].includes(state.view) ? 15000 : 0;
     if (wait) timer = setTimeout(async () => { if (!document.hidden && !state.error) await refresh(); schedule(); }, wait);
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden && state.open) refresh(); });
@@ -290,6 +349,9 @@
       const info = await api('info');
       state.project = info?.project_name || '';
       titleSub.textContent = state.project ? `For ${state.project}` : 'We usually reply within a day';
+      // A one-time purchase has no subscription. Older Zenatiq servers don't know this request.
+      state.sub = await api('subscription').catch(() => null);
+      if (state.sub) showBanner(state.sub);
       await loadThreads();
     } catch (ex) {
       state.error = ex.code === 'bad_key' ? BAD_KEY : ex.message;
@@ -384,6 +446,30 @@ input:focus,textarea:focus{outline:none;border-color:#0d0d0f}
 .msg.client .bubble{border:1px solid #e6e1d8;border-radius:14px 4px 14px 14px;background:#fff;color:#18181b}
 .reply{position:sticky;bottom:0;display:flex;gap:8px;padding:10px 12px;background:#fff;border-top:1px solid #e6e1d8}
 .reply textarea{min-height:44px;max-height:140px}
+.tabs{display:flex;gap:2px;padding:0 10px;background:#fff;border-bottom:1px solid #e6e1d8}
+.tab{display:inline-flex;align-items:center;gap:6px;padding:10px 12px;border:0;border-bottom:2px solid transparent;background:none;color:#6a655e;font-weight:600;font-size:13.5px}
+.tab:hover{color:#18181b}
+.tab.on{color:#18181b;border-bottom-color:#e10600}
+.tab:focus-visible{outline:3px solid #e10600;outline-offset:-3px}
+.dot{width:7px;height:7px;border-radius:50%;background:#e10600}
+.subview{display:grid;gap:12px;padding:16px}
+.subcard{display:grid;gap:14px;padding:16px;border:1px solid #e6e1d8;border-radius:14px;background:#fff}
+.subname{font-size:16px;white-space:normal}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.facts dt{color:#6a655e;font-size:12px}
+.facts dd{font-weight:700;font-size:15px}
+.subnote{padding:10px 12px;border-radius:10px;background:#f7f5f1;font-size:13px}
+.subnote.warn{background:#fde4e2;color:#b00500;font-weight:600}
+a.btn{text-decoration:none}
+.hint{color:#6a655e;font-size:12px;text-align:center}
+.pill.sub.active{background:#e2f5e9;color:#13753a}
+.pill.sub.ending{background:#fdf1dc;color:#9a5b00}
+.pill.sub.grace{background:#fde9dc;color:#b54a00}
+.pill.sub.expired{background:#fde4e2;color:#b00500}
+.banner{position:fixed;top:0;left:0;right:0;z-index:2147483001;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px 12px;padding:9px 52px 9px 16px;background:#0d0d0f;color:#fff;font:600 13.5px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;box-shadow:0 8px 24px -12px rgba(0,0,0,.5)}
+.banner.urgent{background:#b00500}
+.banner a{color:#fff;text-decoration:underline}
+.banner .x{position:absolute;right:8px;top:50%;width:30px;height:30px;transform:translateY(-50%);color:#fff}
 .spinner{width:28px;height:28px;border:3px solid #e6e1d8;border-top-color:#e10600;border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width:480px){

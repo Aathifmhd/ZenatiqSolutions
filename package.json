@@ -8,6 +8,7 @@
     "demo": "node --watch backend/server.js --demo",
     "start": "node backend/server.js",
     "member": "node backend/member.js",
+    "license-key": "node backend/license-key.js",
     "test": "node --test \"backend/tests/*.test.js\""
   },
   "dependencies": {

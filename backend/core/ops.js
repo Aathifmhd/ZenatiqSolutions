@@ -9,7 +9,8 @@
 import { savePassword, temporaryPassword } from '../passwords.js';
 import { passwordEmail, renewalEmail } from '../mail.js';
 import { repoFrom } from '../github.js';
-import { today, addYears, periodEnd, daysBetween, statusOf, dueReminder, withStatus } from './renewals.js';
+import { payhereStatus } from '../payhere.js';
+import { today, addYears, periodEnd, daysBetween, statusOf, dueReminder, withStatus, renewUrl } from './renewals.js';
 
 export class OpError extends Error {
   constructor(message, code = 'invalid', status = 400, extra = undefined) {
@@ -149,6 +150,15 @@ function writers(store) {
   };
 }
 
+// Each subscription has a secret token for its renewal page link (reminder emails, the widget,
+// the licence). Older subscriptions get theirs the first time one is needed.
+export async function ensureRenewToken(store, sub) {
+  if (!sub || sub.renew_token) return sub;
+  const renew_token = hex(24);
+  await store.col('subscriptions').updateOne({ id: sub.id }, { $set: { renew_token } });
+  return { ...sub, renew_token };
+}
+
 // Who backend/member.js acts as: it runs on a computer with the database password, needs no
 // sign-in, and is how the first owners get in. The API never acts as SYSTEM.
 export const SYSTEM = Object.freeze({ id: null, role: 'owner', full_name: 'System', active: true });
@@ -185,12 +195,13 @@ export function createPortal(store, { mailer, github } = {}) {
   }
 
   // Emails the client a renewal reminder and notes it; `key` marks a scheduled reminder as sent.
-  async function remindClient(sub, project, stage, left, me, key = null) {
+  async function remindClient(subscription, project, stage, left, me, key = null) {
+    const sub = await ensureRenewToken(store, subscription);
     const client = project.client_id ? await one('clients', { id: project.client_id }) : null;
     const to = sub.email || client?.email;
     if (!to) throw new OpError(`${project.name} has no email for reminders. Add one to the subscription or to the client.`, 'no_email', 400);
     if (!mailer) throw new OpError("Email isn't set up, so the reminder can't be sent.", 'email_not_configured', 503);
-    const { sent } = await mailer(renewalEmail({ sub, project, client, to, stage, left }));
+    const { sent } = await mailer(renewalEmail({ sub, project, client, to, stage, left, link: renewUrl(sub) }));
     await col('subscriptions').updateOne({ id: sub.id }, {
       $set: { ...(key ? { reminders: [...(sub.reminders || []).slice(-19), key] } : {}), last_reminded_at: now() },
     });
@@ -629,15 +640,33 @@ export function createPortal(store, { mailer, github } = {}) {
       needAdmin(me);
       const day = today();
       const [subs, job] = await Promise.all([find('subscriptions'), one('jobs', { id: 'renewal-reminders' })]);
-      return { today: day, subscriptions: subs.map((s) => withStatus(s, day)), remindersRanAt: job?.last_run_at ?? null };
+      const withTokens = await Promise.all(subs.map((s) => ensureRenewToken(store, s)));
+      return {
+        today: day, subscriptions: withTokens.map((s) => withStatus(s, day)), remindersRanAt: job?.last_run_at ?? null,
+        // What's switched on in Vercel's settings: online payments, and licences for client systems.
+        setup: { ...payhereStatus(), licenses: Boolean(process.env.LICENSE_PRIVATE_KEY?.trim()) },
+      };
     },
     // One project's subscription (or null) and its renewals, newest first.
     async 'subscriptions.get'(me, { projectId }) {
       needAdmin(me);
       const project = await need('projects', projectId, 'That project');
-      const sub = await one('subscriptions', { project_id: project.id });
+      const sub = await ensureRenewToken(store, await one('subscriptions', { project_id: project.id }));
       const renewals = sub ? await find('renewals', { project_id: project.id }, { sort: { created_at: -1 } }) : [];
       return { subscription: sub ? withStatus(sub) : null, renewals };
+    },
+    // What the renewal page shows for bank transfers (the clients' renewal links all use it).
+    async 'renewals.settings'(me) {
+      needAdmin(me);
+      const saved = await one('settings', { id: 'renewal-page' });
+      return { bank_details: saved?.bank_details ?? null, updated_at: saved?.updated_at ?? null };
+    },
+    async 'renewals.saveSettings'(me, { bank_details: bankDetails }) {
+      needAdmin(me);
+      const fields = { bank_details: text(bankDetails, 2000, 'Bank details'), updated_at: now() };
+      await col('settings').updateOne({ id: 'renewal-page' }, { $set: fields }, { upsert: true });
+      await log(me, null, 'settings.renewals', 'Updated the bank details on the renewal page', { adminOnly: true });
+      return fields;
     },
     // Sets up or changes a project's yearly subscription. Without dates it starts today and is
     // paid for one year.
@@ -661,7 +690,11 @@ export function createPortal(store, { mailer, github } = {}) {
         updated_at: now(),
       };
       if (old) await col('subscriptions').updateOne({ id: old.id }, { $set: fields });
-      else await col('subscriptions').insertOne({ id: uuid(), project_id: project.id, cancelled: false, reminders: [], last_reminded_at: null, created_at: now(), ...fields });
+      else {
+        await col('subscriptions').insertOne({
+          id: uuid(), project_id: project.id, cancelled: false, reminders: [], last_reminded_at: null, renew_token: hex(24), created_at: now(), ...fields,
+        });
+      }
       await log(me, project.id, old ? 'subscription.updated' : 'subscription.added', old
         ? `Updated the yearly subscription for ${project.name}`
         : `Set up a yearly subscription for ${project.name}: ${fields.package}, ${money(fields.price, fields.currency)} a year, paid until ${fmtDay(ends)}`,
@@ -817,6 +850,18 @@ export function createConnect(store) {
     async info(project) {
       const client = project.client_id ? await one('clients', { id: project.client_id }) : null;
       return { project_name: project.name, client_name: client?.name || null };
+    },
+    // The yearly subscription, for the widget's Subscription tab and renewal banner. Null for a
+    // one-time purchase, or once it's cancelled and past its paid days.
+    async subscription(project) {
+      const sub = await ensureRenewToken(store, await one('subscriptions', { project_id: project.id }));
+      if (!sub) return null;
+      const shown = withStatus(sub);
+      if (shown.status === 'cancelled' && shown.days_left < 0) return null;
+      return {
+        package: sub.package, price: sub.price, currency: sub.currency, paid_until: sub.ends_on, grace_days: sub.grace_days,
+        status: shown.status, days_left: shown.days_left, renew_url: shown.renew_url,
+      };
     },
     async threads(project) {
       const list = await col('threads').find({ project_id: project.id }, { sort: { last_message_at: -1 }, limit: 100 });

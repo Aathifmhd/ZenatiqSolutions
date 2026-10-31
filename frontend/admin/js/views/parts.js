@@ -148,7 +148,20 @@ export function projectModal(ctx, project = null) {
         <label class="field"><span>Start date</span><input class="input" type="date" name="start_date" value="${p.start_date || ''}"></label>
         <label class="field"><span>Due date</span><input class="input" type="date" name="due_date" value="${p.due_date || ''}"></label>
       </div>
-      <label class="field"><span>Notes <em>(optional)</em></span><textarea class="input" name="description" rows="3" maxlength="5000">${p.description || ''}</textarea></label>`,
+      <label class="field"><span>Notes <em>(optional)</em></span><textarea class="input" name="description" rows="3" maxlength="5000">${p.description || ''}</textarea></label>
+      ${!project && ctx.isAdmin ? html`
+        <fieldset class="billing">
+          <legend>How does the client pay?</legend>
+          <div class="billing__choices">
+            <label class="choice"><input type="radio" name="billing" value="one_time" checked><span><b>One-time purchase</b><small>They pay for the build once.</small></span></label>
+            <label class="choice"><input type="radio" name="billing" value="yearly"><span><b>Yearly subscription</b><small>They pay every year to keep using it.</small></span></label>
+          </div>
+          <div class="field-row" data-yearly hidden>
+            <label class="field"><span>Package</span><input class="input" name="sub_package" maxlength="120" placeholder="e.g. POS Business"></label>
+            <label class="field"><span>Yearly price (LKR)</span><input class="input" name="sub_price" inputmode="decimal" placeholder="e.g. 25000"></label>
+          </div>
+          <small class="field__hint" data-yearly hidden>The first year starts on the start date, or today. The client is emailed before each renewal; set the build price and other details on the project's Payments tab.</small>
+        </fieldset>` : ''}`,
     onOpen: (form) => {
       const select = form.querySelector('[data-client-select]');
       const box = form.querySelector('[data-new-client]');
@@ -157,6 +170,13 @@ export function projectModal(ctx, project = null) {
         box.querySelector('input').required = !box.hidden;
         if (!box.hidden) box.querySelector('input').focus();
       });
+      // Yearly subscriptions need a package and a yearly price.
+      form.querySelectorAll('[name=billing]').forEach((radio) => radio.addEventListener('change', () => {
+        const yearly = form.elements.billing.value === 'yearly';
+        form.querySelectorAll('[data-yearly]').forEach((el) => { el.hidden = !yearly; });
+        form.elements.sub_package.required = yearly;
+        form.elements.sub_price.required = yearly;
+      }));
     },
     onSubmit: async (fd) => {
       const urls = {};
@@ -165,6 +185,9 @@ export function projectModal(ctx, project = null) {
         urls[name] = raw ? safeUrl(raw) : null;
         if (raw && !urls[name]) throw new Error(`"${raw}" doesn't look like a web address.`);
       }
+      const yearly = fd.get('billing') === 'yearly';
+      const yearlyPrice = yearly ? num(fd, 'sub_price') : null;
+      if (yearly && !(yearlyPrice >= 0)) throw new Error('Enter the yearly price as a number.');
       let clientId = val(fd, 'client_id');
       if (clientId === '__new') {
         const created = await db.clients.add({ name: val(fd, 'new_client') });
@@ -175,8 +198,11 @@ export function projectModal(ctx, project = null) {
         start_date: val(fd, 'start_date'), due_date: val(fd, 'due_date'), description: val(fd, 'description'), ...urls,
       };
       const saved = project ? await db.projects.update(project.id, row) : await db.projects.add(row);
+      if (yearly) {
+        await db.subscriptions.set(saved.id, { package: val(fd, 'sub_package'), price: yearlyPrice, currency: 'LKR', starts_on: row.start_date || today() });
+      }
       await store.load();
-      toast(project ? 'Project saved' : 'Project created');
+      toast(project ? 'Project saved' : yearly ? 'Project created, with a yearly subscription' : 'Project created');
       return saved;
     },
   });

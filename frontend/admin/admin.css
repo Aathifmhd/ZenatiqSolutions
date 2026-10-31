@@ -237,6 +237,16 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
 .pcard__link{position:absolute;inset:0;z-index:1;border-radius:var(--radius)}
 .pcard__top{display:flex;align-items:center;justify-content:space-between}
 .pcard__icon{display:grid;place-items:center;width:40px;height:40px;border-radius:11px;background:var(--ink);color:#fff}
+.pcard__pills{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
+/* "How does the client pay?" on a new project */
+.billing{display:grid;gap:10px;min-width:0;margin:0;padding:0;border:0}
+.billing legend{margin-bottom:6px;padding:0;font-size:.88rem;font-weight:600}
+.billing__choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.choice{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--line-2);border-radius:12px;cursor:pointer}
+.choice:has(input:checked){border-color:var(--ink);box-shadow:0 0 0 3px rgba(13,13,15,.08)}
+.choice input{margin-top:3px;accent-color:var(--red)}
+.choice b{display:block;font-size:.92rem}
+.choice small{color:var(--muted);font-size:.8rem}
 .pcard h3{margin-top:4px;font-size:1.12rem;overflow-wrap:anywhere}
 .pcard__client{color:var(--muted);font-size:.86rem;overflow-wrap:anywhere}
 .pcard__url{position:relative;z-index:2;display:inline-flex;align-items:center;gap:6px;width:max-content;max-width:100%;overflow:hidden;color:var(--red-deep);font-size:.85rem;font-weight:600;text-decoration:none;white-space:nowrap;text-overflow:ellipsis}
@@ -363,6 +373,14 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
 .renewals__job{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
 .renewals__job p{display:flex;align-items:flex-start;gap:8px;max-width:70ch}
 .renewals__job .i{flex:none;width:15px;height:15px;margin-top:3px}
+.renewpage{display:grid;gap:14px;margin-top:18px}
+.renewpage .card__head{margin-bottom:0}
+.renewpage__setup{display:grid;gap:8px}
+.renewpage__setup li{display:flex;align-items:flex-start;gap:8px;color:var(--muted);font-size:.88rem}
+.renewpage__setup li.is-on{color:var(--ok)}
+.renewpage__setup .i{flex:none;width:16px;height:16px;margin-top:2px}
+.renewpage__bank{display:grid;gap:10px;justify-items:start}
+.renewpage__bank .field{width:100%;max-width:520px}
 .money__summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:center;gap:16px 24px}
 .money__summary > div:not(.money__bar):not(.money__actions) span{display:block;color:var(--muted);font-size:.84rem}
 .money__summary b{font:800 1.45rem/1.2 var(--display);letter-spacing:-.02em}
@@ -510,6 +528,7 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
   .subcard__facts{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:640px){
+  .billing__choices{grid-template-columns:1fr}
   .stats{grid-template-columns:1fr 1fr;gap:10px}
   .stat{padding:14px}
   .stat__icon{width:32px;height:32px}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Renew your subscription · Zenatiq Solutions</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0d0d0f">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/zenatiq-icon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&amp;family=Instrument+Sans:wght@400..700&amp;display=swap">
+<style>
+:root{--ink:#0d0d0f;--red:#e10600;--red-deep:#b00500;--red-soft:#fde4e2;--paper:#f7f5f1;--line:#e6e1d8;--line-2:#d9d2c6;--text:#18181b;--muted:#6a655e;--ok:#13753a;--warn:#9a5b00;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;--sans:"Instrument Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+body{min-height:100vh;background:radial-gradient(circle at 85% 0%,rgba(225,6,0,.1),transparent 40%),var(--paper);color:var(--text);font:400 16px/1.55 var(--sans)}
+a{color:var(--red-deep)}
+button{font:inherit;cursor:pointer}
+h1,h2{font-family:var(--display);letter-spacing:-.02em;line-height:1.15}
+.page{display:grid;gap:18px;width:min(640px,100%);margin:0 auto;padding:28px 16px 48px}
+.brand{display:flex;justify-content:center;padding:6px 0 4px}
+.brand img{height:44px;width:auto}
+.card{display:grid;gap:16px;padding:24px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 18px 40px -28px rgba(13,13,15,.35)}
+.lead h1{font-size:1.7rem}
+.lead p{color:var(--muted)}
+.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.facts div > span{display:block;color:var(--muted);font-size:.85rem}
+.facts b{display:block;overflow-wrap:anywhere;font:800 1.1rem/1.3 var(--display)}
+.pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:.78rem;font-weight:700}
+.pill.active{background:#e2f5e9;color:var(--ok)}.pill.ending{background:#fdf1dc;color:var(--warn)}
+.pill.grace{background:#fde9dc;color:#b54a00}.pill.expired{background:var(--red-soft);color:var(--red-deep)}.pill.cancelled{background:#ebebeb;color:#555}
+.note{padding:12px 14px;border-radius:12px;background:var(--paper);color:var(--text);font-size:.95rem}
+.note.warn{background:var(--red-soft);color:var(--red-deep);font-weight:600}
+.note.ok{background:#e2f5e9;color:var(--ok);font-weight:600}
+h2{font-size:1.2rem}
+.years{display:grid;gap:10px}
+.year{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border:1.5px solid var(--line-2);border-radius:14px;cursor:pointer}
+.year input{position:absolute;opacity:0}
+.year:has(input:checked){border-color:var(--ink);box-shadow:0 0 0 3px rgba(13,13,15,.08)}
+.year:has(input:focus-visible){outline:3px solid var(--red);outline-offset:2px}
+.year b{font-size:1rem}.year small{display:block;color:var(--muted);font-size:.85rem}
+.year strong{font:800 1.15rem var(--display);white-space:nowrap}
+.methods{display:grid;gap:12px}
+.method{display:grid;gap:12px;padding:16px;border:1px solid var(--line);border-radius:14px}
+.method h3{font-size:1rem}
+.method p{color:var(--muted);font-size:.93rem}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.field{display:grid;gap:5px;min-width:0}
+.field span{font-size:.85rem;font-weight:600}
+.field.wide{grid-column:1 / -1}
+input{width:100%;min-height:44px;padding:9px 12px;border:1px solid var(--line-2);border-radius:10px;background:#fff;color:var(--text);font:inherit;font-size:.95rem}
+input:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(13,13,15,.08)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 20px;border:0;border-radius:999px;background:var(--red);color:#fff;font-weight:700;text-decoration:none}
+.btn:hover{background:var(--red-deep)}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.btn.dark{background:var(--ink)}.btn.dark:hover{background:#2a2a2f}
+.btn.ghost{background:#fff;color:var(--text);border:1px solid var(--line-2)}
+.bank{white-space:pre-wrap;padding:12px 14px;border-radius:12px;background:var(--paper);font:500 .95rem/1.6 var(--sans)}
+.error{padding:10px 12px;border-radius:10px;background:var(--red-soft);color:var(--red-deep);font-weight:600;font-size:.93rem}
+.spinner{width:30px;height:30px;margin:30px auto;border:3px solid var(--line);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.foot{color:var(--muted);font-size:.85rem;text-align:center}
+@media (max-width:520px){.facts,.fields{grid-template-columns:1fr}.card{padding:18px}.year{flex-wrap:wrap}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<main class="page">
+  <a class="brand" href="/"><img src="/assets/zenatiq-logo.png" alt="Zenatiq Solutions" width="519" height="150"></a>
+  <div id="renew"><div class="card"><div class="spinner" role="status" aria-label="Loading"></div></div></div>
+  <p class="foot">Questions? Message us on <a href="https://wa.me/94758112170" target="_blank" rel="noopener">WhatsApp</a>. Read the <a href="/terms">subscription terms</a>.</p>
+</main>
+<script type="module" src="/renew/renew.js"></script>
+</body>
+</html>

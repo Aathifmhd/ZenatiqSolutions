@@ -7,7 +7,7 @@ The portal lives at **https://www.zenatiqsolutions.com/admin**. It has:
 - **Contact with Zenatiq**: an inbox for messages clients send from their own websites
 - **Clients**, **Team** (sign-in with email and password), **Payments** (owners and admins only) and an **Activity** log that can't be edited
 - Each project's **Activity** tab also lists every commit in its GitHub repository
-- **Renewals** for yearly packages, with reminder emails to clients before each one is due
+- **Renewals** for yearly packages: reminder emails to clients, a renewal page where they pay online or by bank transfer, and licences that make client systems read-only once a subscription runs out
 
 Data is stored in **MongoDB Atlas** (free plan), and **Resend** sends the emails with each new person's username and temporary password. The website and portal (`frontend/`) and their API (`backend/`, one Express app) deploy together as a single Vercel project.
 
@@ -59,11 +59,15 @@ In Vercel, open the project, then **Settings → Environment Variables**. Add th
 | `GITHUB_TOKEN` | Recommended. Lets the Activity tabs read your GitHub repositories (see [GitHub commits](#github-commits-in-the-activity-tab)). |
 | `CRON_SECRET` | Needed for automatic renewal reminders. Any long random text (see [Yearly subscriptions](#yearly-subscriptions-and-renewals)). |
 | `MAIL_REPLY_TO` | Optional. An inbox you read, such as `hello@zenatiqsolutions.com`. Clients' replies to reminder emails go there. |
+| `LICENSE_PRIVATE_KEY` | Needed for licences. Copy it from your `.env` (see [Licences](#licences-for-client-systems)). |
+| `PAYHERE_MERCHANT_ID` | For online renewal payments (see [PayHere](#online-payments-with-payhere)). |
+| `PAYHERE_MERCHANT_SECRET` | The PayHere Merchant Secret that goes with it. |
+| `PAYHERE_SANDBOX` | `1` while you test with PayHere's sandbox. Delete it to take real payments. |
 | `MONGODB_DB` | Optional. The database name. `zenatiq` if left out. |
 
 Then go to **Deployments**, open the latest one and choose **⋯ → Redeploy**. New settings only reach new deployments. If you added `GOOGLE_CLIENT_ID` or `OWNER_EMAIL` earlier, delete them: the portal doesn't use them any more.
 
-`MONGODB_URI` holds the database password and `RESEND_API_KEY` can send email as you, so keep both out of the code and out of chat. If one leaks, replace it: in Atlas change the user's password (Database Access → Edit), and in Resend delete the key and make a new one. Then update the setting in Vercel and redeploy.
+`MONGODB_URI` holds the database password and `RESEND_API_KEY` can send email as you, so keep both out of the code and out of chat. The same goes for `LICENSE_PRIVATE_KEY` and `PAYHERE_MERCHANT_SECRET`. If one leaks, replace it: in Atlas change the user's password (Database Access → Edit), and in Resend delete the key and make a new one. Then update the setting in Vercel and redeploy.
 
 ## 4. Add the founders, then the team
 
@@ -106,18 +110,19 @@ npm run member -- password you@example.com
    - **A link**: for systems where you can't add code (for example the Odoo POS at Regal Hardware). Add it as a menu item or bookmark.
 3. Use **Open the client view** on the same tab to send yourself a test message.
 
-Each project has its own secret key. A key only reaches that project's conversations, and each project is limited to 30 client messages an hour. If a key ends up somewhere public, click **Make a new key** and paste the new code.
+Each project has its own secret key. A key only reaches that project's conversations, and each project is limited to 30 client messages an hour. If a key ends up somewhere public, click **Make a new key** and paste the new code. The same key is the system's licence key, so update `ZENATIQ_KEY` too (see [Licences](#licences-for-client-systems)).
+
+For a project with a yearly subscription, the widget also has a **Subscription** tab with the package, the "paid until" date and a **Renew now** button. When renewal is due within 30 days or overdue, the floating button shows a banner across the top of the page, which clients can hide for the day. To never show the banner, add `data-banner="off"` to the script tag.
 
 New client messages show a red badge and a pop-up in the portal within about 12 seconds (about a minute when the tab is in the background). Turn on **Desktop alerts** in the sidebar to get a notification when the portal isn't the tab you're looking at.
 
 ## Yearly subscriptions and renewals
 
-**Set one up** for a client who pays every year to keep using a system, such as a POS package.
+**Set one up** for a client who pays every year to keep using a system, such as a POS package:
+- **A new project:** under **How does the client pay?**, choose **Yearly subscription**, then enter the package name and the yearly price. The first year starts on the project's start date, or today.
+- **An existing project:** open its **Payments** tab and choose **Set up a yearly subscription**. There you can also set the "paid until" date (the last day that's paid for), the grace days, and a reminder email if the client's own email shouldn't get them.
 
-1. Open the project, then the **Payments** tab.
-2. Choose **Set up a yearly subscription**.
-3. Enter the package name, the yearly price, the start date and the "paid until" date (the last day that's paid for). By default it's one year from today.
-4. Optionally, add a reminder email if the client's own email shouldn't get them.
+Projects with a subscription have a **Yearly** label on the Projects page. On the website, the pricing page explains one-time purchases and yearly packages, and says each quote shows the first-year and yearly renewal prices. The terms clients agree to are at https://www.zenatiqsolutions.com/terms: no refund once a paid year has started, 14 grace days, then read-only, and their data kept for 90 days after that.
 
 **Track them on the Renewals page** (owners and admins only). Every subscription has a status:
 
@@ -126,12 +131,18 @@ New client messages show a red badge and a pop-up in the portal within about 12 
 | **Active** | Paid for more than 30 days ahead. |
 | **Ending soon** | 30 days or less to go. |
 | **In grace period** | Ended, but still within its grace days (14 by default) to renew. |
-| **Expired** | The grace days have run out. |
+| **Expired** | The grace days have run out. Systems with the [licence check](#licences-for-client-systems) are now read-only. |
 | **Cancelled** | The client isn't renewing, so no more reminders go out. |
 
 The dashboard shows how many are due in the next 30 days.
 
-**When a client pays, choose Record renewal.**
+**Clients renew on their own renewal page.** Each subscription has a secret link to it. The reminder emails and the client's widget link there, and **Copy renewal link** on the project's Payments tab copies it, for example for WhatsApp. On the page, the client chooses 1, 2 or 3 years, then pays:
+- **online**, through PayHere (see [Online payments](#online-payments-with-payhere)). The renewal is recorded by itself as soon as PayHere confirms the payment, and the client gets a receipt by email.
+- **by bank transfer**, using the bank details you enter under **Renewal page** on the Renewals page. Clients send the slip on WhatsApp, and you record the renewal when the money arrives.
+
+To see what a client sees, use **Preview a client's page** on the Renewals page.
+
+**When a client pays any other way, choose Record renewal.**
 - It records the payment, tagged as a renewal, and moves "paid until" on by the years paid for.
 - Paid within the grace days, the new year carries on from the old date, so the client loses nothing. Paid later, it starts on the payment day.
 - Renewal payments count towards "Received" on the Payments page, but not towards a project's build balance.
@@ -148,6 +159,53 @@ To turn the automatic reminders on:
 2. Optionally, add `MAIL_REPLY_TO`, an inbox you read, so clients can reply to reminders. They always include your WhatsApp number.
 
 The Renewals page shows when the reminders last went out. **Send today's reminders now** runs the same job straight away.
+
+## Online payments with PayHere
+
+Clients can pay renewals by card or mobile wallet through [PayHere](https://www.payhere.lk). Until it's set up, the renewal page offers bank transfer only.
+
+1. **Test first.** Sign up at [sandbox.payhere.lk](https://sandbox.payhere.lk). Under **Settings → Domains & Credentials**, add `zenatiqsolutions.com`, then copy the **Merchant ID** and the **Merchant Secret** for it.
+2. In Vercel, add `PAYHERE_MERCHANT_ID`, `PAYHERE_MERCHANT_SECRET` and `PAYHERE_SANDBOX` (set to `1`), then redeploy. The Renewals page now says online payments are on, in test mode.
+3. Make a test project with a yearly subscription, so no real client gets an email. On its Payments tab, choose **Copy renewal link** and open the link. Pay with one of PayHere's test cards, with your own email for the receipt. Check that "paid until" moves on and the receipt arrives; no real money is taken. Then delete the test project, which removes its payments too.
+4. **Go live.** Sign up at [payhere.lk](https://www.payhere.lk) with your business details. PayHere looks at your website before approving you: it wants to see prices, terms with a refund rule, a privacy policy and contact details, which the site now has. Once you're approved, add `zenatiqsolutions.com` under **Settings → Domains & Credentials** and wait for that to be approved too.
+5. In Vercel, replace `PAYHERE_MERCHANT_ID` and `PAYHERE_MERCHANT_SECRET` with the live ones, delete `PAYHERE_SANDBOX`, and redeploy.
+
+How it works: the renewal page sends the client to PayHere's checkout with the order signed by your Merchant Secret, so nobody can change the amount. PayHere then tells the site about the payment at `/api/payhere/notify`. The site checks PayHere's signature and the amount, then records the renewal once, even if PayHere sends the same notice twice. If PayHere later reverses a payment, the order is marked and the server log says so, but the renewal stays until you decide. PayHere can only reach the live site, so on your computer a test payment is never confirmed.
+
+## Licences for client systems
+
+The licence check stops a system from being used for free once its subscription runs out. Each system asks this site, once a day, whether its subscription is paid. The answer is signed with Zenatiq's private key, so nobody can fake or edit it.
+
+**What the client sees:**
+- **Ending soon, and during the grace days:** a banner asking them to renew, with a link to their renewal page.
+- **After the grace days:** the system becomes **read-only**. Staff can still sign in, look things up and export their data, but they can't add or change anything. After they renew, it switches back on by itself, the next time someone tries to make a change.
+- **Without internet:** the system keeps working from the last licence it saved, and still goes read-only on time. After 7 days without a check, the banner asks them to connect. Turning the computer's clock back doesn't help.
+- **One-time purchases** have no subscription, so they never go read-only.
+
+**Turn licences on.** The key pair already exists: `LICENSE_PRIVATE_KEY` is in your `.env`, and its public key is built into the module. Copy `LICENSE_PRIVATE_KEY` from `.env` into Vercel, then redeploy. The Renewals page then says licences are on.
+
+Anyone with `LICENSE_PRIVATE_KEY` could make a licence for any system, so guard it like a password. If it leaks:
+1. Delete it from `.env` and run `npm run license-key` to make a new pair.
+2. Put the new public key it prints into `ZENATIQ_PUBLIC_KEY` in `frontend/license/zenatiq-license.mjs`.
+3. Update Vercel and the module in every client system.
+
+**Add the check to a system.** Try it on one system first, such as Cargo POS. It needs a Node.js 18 server, such as an Express API.
+1. Copy `frontend/license/zenatiq-license.mjs` into the system's server code. It's also at https://www.zenatiqsolutions.com/license/zenatiq-license.mjs.
+2. On the system's server, set `ZENATIQ_KEY` to the project's key: the `data-key` value on its **Widget** tab.
+3. In the server:
+
+   ```js
+   import { createLicense } from './zenatiq-license.mjs';
+
+   const license = createLicense({ key: process.env.ZENATIQ_KEY, file: '.zenatiq-license.json' });
+   await license.start();                                                     // checks now, then once a day
+   app.use(license.readOnlyGuard({ allow: ['/api/login', '/api/logout'] }));  // refuses changes while read-only
+   app.get('/api/license', (req, res) => res.json(license.state()));           // for the admin panel's banner
+   ```
+
+4. In the admin panel, show `message` from `/api/license` as a banner whenever it isn't empty, with a **Renew** link to `renewUrl`. A refused change comes back as `402`, with `error.code` set to `read_only`: show its `error.message`.
+
+Systems that don't run Node.js can make the same check in any language. `POST https://www.zenatiqsolutions.com/api/license` with `{ "key": "..." }` returns the licence, signed with Ed25519, and `/api/license/key` gives the public key to check it with.
 
 ## GitHub commits in the Activity tab
 
@@ -206,6 +264,9 @@ Open http://localhost:3000 for the website and http://localhost:3000/admin for t
   - `routes/auth.js` handles sign-in and passwords.
   - `routes/portal.js` runs the portal's operations.
   - `routes/connect.js` serves the widget.
+  - `routes/renew.js` runs the renewal page, and `routes/payhere.js` takes PayHere's payment notices.
+  - `routes/license.js` gives client systems their licences, which `license.js` signs.
+  - `routes/cron.js` is the daily reminder job.
   - Every rule about who may do what is in `backend/core/ops.js`.
   - `member.js` is `npm run member`.
 

@@ -43,6 +43,23 @@ export async function readJson(req) {
   return body;
 }
 
+// A form-encoded body, as PayHere sends its payment notifications. Vercel may have read it already.
+export async function readForm(req) {
+  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) return { ...req.body };
+  let text = typeof req.body === 'string' ? req.body : Buffer.isBuffer(req.body) ? req.body.toString('utf8') : null;
+  if (text == null) {
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > MAX_BODY) throw new HttpError('The request is too large.', 'too_large', 413);
+      chunks.push(chunk);
+    }
+    text = Buffer.concat(chunks).toString('utf8');
+  }
+  return Object.fromEntries(new URLSearchParams(text));
+}
+
 // Portal requests must come from the portal itself: JSON (which other sites can't send without
 // permission) and, when the browser says where it came from, this same site.
 export function checkPortalRequest(req) {

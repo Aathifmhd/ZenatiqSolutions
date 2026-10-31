@@ -451,6 +451,7 @@ const TABS = {
             <div class="subcard__actions">
               ${sub.status === 'cancelled' ? '' : html`<button class="btn btn--primary btn--sm" type="button" data-act="renew">${icon('a-renew')}Record a renewal</button>
                 <button class="btn btn--ghost btn--sm" type="button" data-act="remind" ${remindTo ? '' : 'disabled'}>${icon('a-send')}Email a reminder now</button>`}
+              ${sub.renew_url ? html`<button class="btn btn--ghost btn--sm" type="button" data-act="copy-renew" title="The client's renewal page, where they can pay">${icon('copy')}Copy renewal link</button>` : ''}
               <button class="btn btn--ghost btn--sm" type="button" data-act="edit-sub">${icon('a-edit')}Edit</button>
               <button class="btn btn--ghost btn--sm" type="button" data-act="cancel-sub">${sub.status === 'cancelled' ? 'Restart reminders' : 'Cancel subscription'}</button>
             </div>
@@ -493,6 +494,7 @@ const TABS = {
       'setup-sub': async () => { if (await subscriptionModal(ctx, project)) render(ctx); },
       'edit-sub': async () => { if (await subscriptionModal(ctx, project, sub)) render(ctx); },
       renew: async () => { if (await renewModal(ctx, project, sub)) render(ctx); },
+      'copy-renew': () => copyText(sub.renew_url, 'Renewal link copied. Send it to the client to pay online or by bank transfer.'),
       remind: async (btn) => {
         btn.disabled = true;
         try { const { to } = await db.subscriptions.remind(project.id); toast(`Reminder emailed to ${to}`); render(ctx); }

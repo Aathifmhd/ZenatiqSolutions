@@ -114,6 +114,9 @@ export const subscriptions = {
   remove: (projectId) => call('subscriptions.remove', { projectId }),
   remind: (projectId) => call('subscriptions.remind', { projectId }),
   runReminders: () => call('subscriptions.runReminders'),
+  // The bank details clients see on their renewal page.
+  settings: () => call('renewals.settings'),
+  saveSettings: (bankDetails) => call('renewals.saveSettings', { bank_details: bankDetails }),
 };
 
 export const activity = {

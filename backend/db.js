@@ -3,7 +3,7 @@ import { MongoClient } from 'mongodb';
 import { attachDatabasePool } from '@vercel/functions';
 
 // Raise this when the indexes below change; each deployment then creates them once.
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const INDEXES = [
   ['team_members', { id: 1 }, { unique: true }],
   ['team_members', { email: 1 }, { unique: true }],
@@ -39,6 +39,10 @@ const INDEXES = [
   ['renewals', { id: 1 }, { unique: true }],
   ['renewals', { project_id: 1, created_at: -1 }],
   ['jobs', { id: 1 }, { unique: true }],
+  ['subscriptions', { renew_token: 1 }, { unique: true, sparse: true }],
+  ['orders', { id: 1 }, { unique: true }],
+  ['orders', { subscription_id: 1, created_at: -1 }],
+  ['settings', { id: 1 }, { unique: true }],
 ];
 
 let ready = null;

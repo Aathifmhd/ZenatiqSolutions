@@ -484,6 +484,9 @@ a:hover .shot img,.project:hover .shot img{transform:scale(1.025)}
 .plan__flag{position:absolute;top:-1px;right:24px;padding:7px 12px;background:var(--red);color:#fff;font:700 .7rem/1 var(--sans);letter-spacing:.12em;text-transform:uppercase;clip-path:polygon(0 0,100% 0,100% 100%,50% 82%,0 100%);padding-bottom:13px}
 @media (max-width:1000px){.plans{grid-template-columns:1fr 1fr}}
 @media (max-width:640px){.plans{grid-template-columns:1fr}}
+.ways{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.ways .plan__for{min-height:0}
+@media (max-width:760px){.ways{grid-template-columns:1fr}}
 
 .free-banner{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:20px 36px;align-items:center;margin-bottom:16px;padding:32px 36px;overflow:hidden;background:var(--ink);color:#fff;clip-path:polygon(0 0,calc(100% - 30px) 0,100% 30px,100% 100%,30px 100%,0 calc(100% - 30px))}
 .free-banner::after{content:"";position:absolute;right:20%;top:-40%;width:90px;height:180%;background:rgba(225,6,0,.22);transform:skewX(-32deg);pointer-events:none}

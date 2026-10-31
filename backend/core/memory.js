@@ -1,6 +1,6 @@
 // An in-memory stand-in for the part of MongoDB that the API uses, for the local demo and the
 // tests. It follows MongoDB's rules where they matter here: { field: null } also matches a
-// missing field, $ne matches missing fields, and sorting puts empty values first.
+// missing field, $ne and $nin match missing fields, and sorting puts empty values first.
 
 // Copies keep dates as dates, as MongoDB does (sessions expire by date).
 const clone = (value) => structuredClone(value);
@@ -21,6 +21,7 @@ function test(value, cond) {
   return Object.entries(cond).every(([op, arg]) => {
     switch (op) {
       case '$in': return arg.some((x) => v === (x ?? null));
+      case '$nin': return !arg.some((x) => v === (x ?? null));
       case '$ne': return v !== (arg ?? null);
       case '$lt': return v !== null && v < arg;
       case '$lte': return v !== null && v <= arg;

@@ -6,11 +6,15 @@ import {
 import { projectModal } from './parts.js';
 
 export async function render(ctx) {
-  const { el, db, store } = ctx;
+  const { el, db, store, isAdmin } = ctx;
   ctx.title = 'Projects';
   await store.load();
-  const [assignments, tasks, threads] = await Promise.all([db.projects.allMembers(), db.tasks.list(), db.threads.list()]);
+  const [assignments, tasks, threads, subs] = await Promise.all([
+    db.projects.allMembers(), db.tasks.list(), db.threads.list(), isAdmin ? db.subscriptions.list() : { subscriptions: [] },
+  ]);
   if (!ctx.isCurrent()) return;
+  // Projects the client pays for every year (owners and admins see this).
+  const yearly = new Set(subs.subscriptions.filter((s) => s.status !== 'cancelled').map((s) => s.project_id));
 
   const filters = {
     q: recall('zq-projects-q') || '',
@@ -30,7 +34,7 @@ export async function render(ctx) {
         <a class="pcard__link" href="#/projects/${p.id}" aria-label="Open ${p.name}"></a>
         <div class="pcard__top">
           <span class="pcard__icon">${icon(TYPE_ICON[p.type] || 'a-folder')}</span>
-          ${pill('status', p.status)}
+          <span class="pcard__pills">${yearly.has(p.id) ? html`<span class="pill is-renewal" title="Paid every year">Yearly</span>` : ''}${pill('status', p.status)}</span>
         </div>
         <h3>${p.name}</h3>
         <p class="pcard__client">${client?.name || 'No client yet'} · ${LABELS.type[p.type]}</p>
