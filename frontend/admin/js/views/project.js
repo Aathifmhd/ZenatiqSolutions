@@ -28,7 +28,7 @@ export async function render(ctx) {
   const threads = await db.threads.list({ projectId: id });
   const unread = threads.filter((t) => t.unread_by_team).length;
   const tabs = [
-    ['overview', 'Overview'], ['tasks', 'Tasks'], ['messages', 'Contact with Zenatiq'],
+    ['overview', 'Overview'], ['tasks', 'Tasks'], ['messages', 'Contact Clients'],
     ...(isAdmin ? [['payments', 'Payments']] : []), ['activity', 'Activity'], ['connect', 'Widget'],
   ];
   const active = tabs.some((t) => t[0] === tab) ? tab : 'overview';

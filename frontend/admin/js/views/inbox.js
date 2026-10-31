@@ -1,4 +1,5 @@
-// Contact with Zenatiq inbox: every client conversation across all projects.
+// Contact Clients: every conversation with clients, across all projects. Clients write in through
+// the "Contact with Zenatiq" widget on their own websites.
 import { html, icon, mount, pageHead, emptyState, remember, recall } from '../lib.js';
 import { threadRow, renderConversation } from './parts.js';
 
@@ -11,7 +12,7 @@ const FILTERS = {
 
 export async function render(ctx) {
   const { el, db, store } = ctx;
-  ctx.title = 'Contact with Zenatiq';
+  ctx.title = 'Contact Clients';
   const selected = ctx.params[0] || null;
   await store.load();
   let threads = await db.threads.list();
@@ -33,7 +34,7 @@ export async function render(ctx) {
   };
 
   mount(el, html`
-    ${pageHead('Contact with Zenatiq', 'Bug reports, update requests and questions sent from your clients\' websites.')}
+    ${pageHead('Contact Clients', 'Bug reports, update requests and questions sent from your clients\' websites.')}
     <div class="inbox inbox--page ${selected ? 'has-open' : ''}">
       <section class="inbox__list">
         <div class="inbox__filters">

@@ -23,11 +23,11 @@ const VIEWS = {
 const NAV = [
   { route: 'dashboard', href: '#/', label: 'Dashboard', icon: 'a-grid' },
   { route: 'projects', href: '#/projects', label: 'Projects', icon: 'a-folder' },
-  { route: 'inbox', href: '#/inbox', label: 'Contact with Zenatiq', icon: 'a-inbox', badge: true },
   { route: 'tasks', href: '#/tasks', label: 'Tasks', icon: 'a-tasks' },
   { route: 'clients', href: '#/clients', label: 'Clients', icon: 'a-building' },
   { route: 'team', href: '#/team', label: 'Team', icon: 'a-users' },
   { route: 'payments', href: '#/payments', label: 'Payments', icon: 'a-wallet', adminOnly: true },
+  { route: 'inbox', href: '#/inbox', label: 'Contact Clients', icon: 'a-inbox', badge: true },
   { route: 'renewals', href: '#/renewals', label: 'Renewals', icon: 'a-renew', adminOnly: true },
   { route: 'activity', href: '#/activity', label: 'Activity', icon: 'clock' },
 ];
