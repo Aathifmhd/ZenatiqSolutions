@@ -1,4 +1,6 @@
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /connect
 
-Sitemap: https://zenatiq-solutions.vercel.app/sitemap.xml
+Sitemap: https://www.zenatiqsolutions.com/sitemap.xml
