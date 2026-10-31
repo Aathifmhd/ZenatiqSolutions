@@ -1,27 +1,21 @@
-// Demo mode for local previews: the portal's real rules (core/ops.js) running in this browser
-// against sample data (core/memory.js). It's only used on localhost (see app.js) and nothing
-// leaves the browser.
-import { createPortal, createConnect, makeActivityId, newConnectKey } from './core/ops.js';
+// The local demo: the whole portal on your computer without a database. The portal's real rules
+// (core/ops.js) run on sample data kept in memory (core/memory.js), and the three sample people
+// sign in with one sample password. backend/server.js starts it when MONGODB_URI isn't set; the
+// sample data comes back fresh whenever the server restarts.
+import { randomUUID as uuid } from 'node:crypto';
+import { createConnect, makeActivityId, newConnectKey, OpError } from './core/ops.js';
 import { MemoryStore } from './core/memory.js';
+import { hashPassword } from './passwords.js';
 
-const KEY = 'zenatiq-demo-db';
-const SESSION = `${KEY}-session`;
-const VERSION = 2;
-const ME = 'demo@zenatiqsolutions.com';
+const SIGN_IN = { email: 'demo@zenatiqsolutions.com', password: 'zenatiq-demo' };
 
-const uuid = () => crypto.randomUUID();
 const ago = (days, hours = 0) => new Date(Date.now() - days * 864e5 - hours * 36e5).toISOString();
 const dateIn = (days) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
-const storage = {
-  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* demo still works for this visit */ } },
-  del: (k) => { try { localStorage.removeItem(k); } catch { /* ignore */ } },
-};
 const money = (n, c = 'LKR') => `${c} ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-function seed() {
+function seed(ownerId, passwordHash) {
   const team = [
-    { id: uuid(), email: ME, full_name: 'Mohamed Aathif', role: 'owner', job_title: 'Founder', phone: '+94 75 811 2170', active: true, created_at: ago(60) },
+    { id: ownerId, email: SIGN_IN.email, full_name: 'Mohamed Aathif', role: 'owner', job_title: 'Founder', phone: '+94 75 811 2170', active: true, created_at: ago(60) },
     { id: uuid(), email: 'developer@example.com', full_name: 'Sample Developer', role: 'admin', job_title: 'Developer', phone: null, active: true, created_at: ago(40) },
     { id: uuid(), email: 'designer@example.com', full_name: 'Sample Designer', role: 'member', job_title: 'UI/UX Designer', phone: null, active: true, created_at: ago(30) },
   ];
@@ -116,43 +110,30 @@ function seed() {
     act(pGloss, null, 'Client · Gloss Workx', 'message.new', 'New update request from Gloss Workx website: "Please change the Premium Detail price"', ago(0, 0.5)),
   ];
 
-  return { team_members: team, clients, projects, project_members, threads, messages, tasks, project_finances, payments, activity, changes: [] };
+  const credentials = team.map((m) => ({ member_id: m.id, password_hash: passwordHash, temporary: false, expires_at: null, updated_at: ago(30) }));
+
+  return { team_members: team, credentials, clients, projects, project_members, threads, messages, tasks, project_finances, payments, activity, changes: [] };
 }
 
-export function createDemo() {
-  let saved = null;
-  try { saved = JSON.parse(storage.get(KEY)); } catch { saved = null; }
-  if (saved?.version !== VERSION) saved = { version: VERSION, collections: seed() };
-  let dirty = true;
-  const store = new MemoryStore(saved.collections, { onWrite: () => { dirty = true; }, cap: { changes: 300 } });
-  const portal = createPortal(store);
-  const connect = createConnect(store);
-  const save = () => {
-    if (dirty) storage.set(KEY, JSON.stringify(saved));
-    dirty = false;
-  };
-  save();
-  const me = () => saved.collections.team_members.find((m) => m.email === ME && m.active) || null;
+export async function createDemo() {
+  // The sample owner keeps one id, so resetting the data doesn't sign them out.
+  const ownerId = uuid();
+  const passwordHash = await hashPassword(SIGN_IN.password);
+  const store = new MemoryStore(seed(ownerId, passwordHash), { cap: { changes: 300, login_attempts: 100 } });
 
   return {
-    me,
-    signedIn: () => storage.get(SESSION) === '1',
-    signIn: () => storage.set(SESSION, '1'),
-    signOut: () => storage.del(SESSION),
-    reset: () => storage.del(KEY),
-    // Same contract as the portal API: one operation, its result, or an error with a message.
-    async call(op, args = {}) {
-      await new Promise((r) => setTimeout(r, 60));
-      try {
-        if (op === 'demo.clientMessage') {
-          const project = saved.collections.projects.find((p) => p.id === args.projectId);
-          if (!project) throw new Error('That project was not found.');
-          return await connect.run('start', { ...args, key: project.connect_key });
-        }
-        return await portal.run(me(), op, args);
-      } finally {
-        save();
-      }
+    store,
+    // Filled in on the sign-in page. The other sample people use the same password.
+    signIn: SIGN_IN,
+    // Fresh sample data. Sign-ins are kept.
+    reset() {
+      store.data = { ...seed(ownerId, passwordHash), sessions: store.data.sessions ?? [] };
+    },
+    // Pretend a client wrote through the Contact with Zenatiq widget.
+    async clientMessage({ projectId, ...fields } = {}) {
+      const project = typeof projectId === 'string' ? await store.col('projects').findOne({ id: projectId }) : null;
+      if (!project) throw new OpError('That project was not found.', 'not_found', 404);
+      return createConnect(store).run('start', { ...fields, key: project.connect_key });
     },
   };
 }

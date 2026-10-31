@@ -11,17 +11,44 @@ export async function render(ctx) {
   const isOwner = me.role === 'owner';
   const people = [...store.team].sort((a, b) => Number(b.active) - Number(a.active) || a.full_name.localeCompare(b.full_name));
 
+  // Changing your own password needs the current one. Your other devices are signed out.
+  const passwordModal = () => modal({
+    title: 'Change my password',
+    submitLabel: 'Change password',
+    body: html`
+      <input name="email" type="email" autocomplete="username" value="${me.email}" hidden>
+      <label class="field"><span>Current password</span><input class="input" name="password" type="password" autocomplete="current-password" required autofocus></label>
+      <label class="field"><span>New password</span><input class="input" name="newPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="200">
+        <small class="field__hint">At least 10 characters.</small></label>
+      <label class="field"><span>New password again</span><input class="input" name="again" type="password" autocomplete="new-password" required minlength="10" maxlength="200"></label>`,
+    onSubmit: async (fd) => {
+      if (fd.get('newPassword') !== fd.get('again')) throw new Error("The two new passwords don't match.");
+      await db.changePassword(fd.get('password'), fd.get('newPassword'));
+      toast('Password changed. Any other devices you were signed in on are now signed out.');
+      return true;
+    },
+  });
+
   const memberModal = (member = null) => {
     const self = member?.id === me.id;
     const canManage = isAdmin && !(member?.role === 'owner' && !isOwner);
     const roles = isOwner ? LABELS.role : { admin: 'Admin', member: 'Member' };
+    let actions = [];
+    if (self) actions = [{ act: 'my-password', label: 'Change my password', icon: 'a-key' }];
+    else if (member && canManage) {
+      actions = [
+        ...(member.active ? [{ act: 'password', label: 'Send a new temporary password', icon: 'a-key' }] : []),
+        { act: member.active ? 'deactivate' : 'activate', label: member.active ? 'Remove access' : 'Give access again', danger: member.active },
+        { act: 'delete', label: 'Delete', icon: 'a-trash', danger: true },
+      ];
+    }
     return modal({
       title: member ? (self ? 'Your details' : `Edit ${member.full_name}`) : 'Add a team member',
       submitLabel: member ? 'Save changes' : 'Add to team',
       body: html`
-        ${member ? '' : html`<p class="modal__text">They'll sign in at <b>zenatiqsolutions.com/admin</b> with this Google account. Nobody else can get in.</p>`}
-        <label class="field"><span>Google email</span><input class="input" name="email" type="email" required maxlength="200"
-          value="${member?.email || ''}" ${member && !canManage ? 'readonly' : ''} placeholder="name@gmail.com" ${member ? '' : 'autofocus'}></label>
+        ${member ? '' : html`<p class="modal__text">We'll email them their username (this email address) and a temporary password for <b>zenatiqsolutions.com/admin</b>. They choose their own password when they first sign in.</p>`}
+        <label class="field"><span>Email</span><input class="input" name="email" type="email" required maxlength="200"
+          value="${member?.email || ''}" ${member && !canManage ? 'readonly' : ''} placeholder="name@example.com" ${member ? '' : 'autofocus'}></label>
         <label class="field"><span>Full name</span><input class="input" name="full_name" required maxlength="120" value="${member?.full_name || ''}" ${member ? 'autofocus' : ''}></label>
         <div class="field-row">
           <label class="field"><span>Job title <em>(optional)</em></span><input class="input" name="job_title" maxlength="80" value="${member?.job_title || ''}" placeholder="e.g. Developer"></label>
@@ -29,12 +56,18 @@ export async function render(ctx) {
         </div>
         ${canManage && !self ? html`<label class="field"><span>Role</span><select class="input" name="role">${options(roles, member?.role || 'member')}</select>
           <small class="field__hint">Owners and admins manage the team and see payments. Members see everything else.</small></label>` : ''}`,
-      actions: member && canManage && !self
-        ? [{ act: member.active ? 'deactivate' : 'activate', label: member.active ? 'Remove access' : 'Give access again', danger: member.active },
-           { act: 'delete', label: 'Delete', icon: 'a-trash', danger: true }]
-        : [],
+      actions,
       onAction: async (act) => {
-        if (act === 'delete') {
+        if (act === 'my-password') return Boolean(await passwordModal());
+        if (act === 'password') {
+          const ok = await confirmDialog({
+            title: `Send ${member.full_name} a new temporary password?`, confirmLabel: 'Send it', danger: false,
+            message: `Their current password stops working and they're signed out everywhere. The new one goes to ${member.email}.`,
+          });
+          if (!ok) return false;
+          const { emailed } = await db.team.sendPassword(member.id);
+          toast(emailed ? `Emailed ${member.full_name} a new temporary password.` : "Email isn't set up here, so the new password is in the server's terminal.");
+        } else if (act === 'delete') {
           const ok = await confirmDialog({ title: `Delete ${member.full_name}?`, message: 'Their tasks stay, but become unassigned. To keep their name on past work, use "Remove access" instead.' });
           if (!ok) return false;
           await db.team.remove(member.id);
@@ -48,11 +81,22 @@ export async function render(ctx) {
         const row = { full_name: val(fd, 'full_name'), job_title: val(fd, 'job_title'), phone: val(fd, 'phone') };
         if (!member || canManage) row.email = val(fd, 'email').toLowerCase();
         if (fd.has('role')) row.role = val(fd, 'role');
-        if (member) await db.team.update(member.id, row);
-        else await db.team.add({ ...row, role: row.role || 'member' });
-        toast(member ? 'Saved' : `${row.full_name} added. They can sign in now.`);
+        if (!member) return db.team.add({ ...row, role: row.role || 'member' });
+        await db.team.update(member.id, row);
+        toast('Saved');
         return true;
       },
+    });
+  };
+
+  // After adding someone: did their email with the temporary password go out?
+  const reportInvite = async ({ full_name: name, invite }) => {
+    if (invite.emailed) return toast(`${name} added. We emailed them their username and a temporary password.`);
+    if (!invite.problem) return toast(`${name} added. Email isn't set up here, so their temporary password is in the server's terminal.`);
+    await modal({
+      title: `${name} was added, but no email went out`,
+      body: html`<p class="modal__text">${invite.problem}</p>
+        <p class="modal__text">Once that's fixed, open ${name} on this page and choose <b>Send a new temporary password</b>.</p>`,
     });
   };
 
@@ -79,12 +123,18 @@ export async function render(ctx) {
     <section class="card howto">
       <h2>How sign-in works</h2>
       <ol>
-        <li>An owner or admin adds the person's <b>Google email</b> here.</li>
-        <li>They open <b>zenatiqsolutions.com/admin</b> and choose <b>Continue with Google</b>.</li>
+        <li>An owner or admin adds the person here. They get an email with their username (their email address) and a temporary password.</li>
+        <li>They sign in at <b>zenatiqsolutions.com/admin</b> and choose their own password. The temporary one stops working after 7 days.</li>
+        <li>Forgotten password? Open the person and choose <b>Send a new temporary password</b>.</li>
         <li>Removing access stops them signing in straight away. Their past work keeps their name.</li>
       </ol>
     </section>`, {
-    add: async () => { if (await memberModal()) render(ctx); },
+    add: async () => {
+      const added = await memberModal();
+      if (!added) return;
+      await reportInvite(added);
+      render(ctx);
+    },
     edit: async (btn) => {
       const saved = await memberModal(store.member(btn.dataset.id));
       if (saved) {

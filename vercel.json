@@ -1,9 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "outputDirectory": "public",
+  "framework": null,
+  "outputDirectory": "frontend",
   "cleanUrls": true,
   "trailingSlash": false,
   "regions": ["bom1"],
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

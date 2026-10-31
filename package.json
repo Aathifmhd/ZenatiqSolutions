@@ -1,11 +1,21 @@
 {
   "name": "zenatiq-website",
   "private": true,
-  "description": "Zenatiq Solutions website, admin portal and the Contact with Zenatiq API (Vercel functions + MongoDB)",
+  "description": "Zenatiq Solutions website and admin portal (frontend/) with its Express API on MongoDB (backend/), deployed as one Vercel project",
   "type": "module",
+  "scripts": {
+    "dev": "node --watch backend/server.js",
+    "demo": "node --watch backend/server.js --demo",
+    "start": "node backend/server.js",
+    "member": "node backend/member.js",
+    "test": "node --test \"backend/tests/*.test.js\""
+  },
   "dependencies": {
     "@vercel/functions": "^3.10.5",
-    "jose": "^6.2.14",
+    "express": "^5.3.0",
     "mongodb": "^7.8.0"
+  },
+  "overrides": {
+    "zod": "^4.6.6"
   }
 }

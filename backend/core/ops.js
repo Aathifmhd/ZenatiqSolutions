@@ -1,11 +1,13 @@
-// Zenatiq admin: every rule for reading and changing data. The server runs this against MongoDB
-// (api/portal.js and api/connect.js) and demo mode runs it in the browser (core/memory.js), so
-// both behave the same. Nothing here trusts the caller: each operation checks the signed-in
-// member's role and only accepts the fields it expects.
+// Zenatiq admin: every rule for reading and changing data. The API routes (routes/portal.js and
+// routes/connect.js) run it against MongoDB, and the local demo and the tests run it against
+// core/memory.js, so all of them behave the same. Nothing here trusts the caller: each operation
+// checks the signed-in member's role and only accepts the fields it expects.
 //
 // `store.col(name)` must offer this part of the MongoDB collection API: find(filter, { sort, limit }),
 // findOne, insertOne, updateOne(filter, { $set }, { upsert }), updateMany, deleteOne, deleteMany and
 // countDocuments. Filters use plain values, $in, $ne, $lt, $lte, $gt and $gte.
+import { savePassword, temporaryPassword } from '../passwords.js';
+import { passwordEmail } from '../mail.js';
 
 export class OpError extends Error {
   constructor(message, code = 'invalid', status = 400, extra = undefined) {
@@ -139,6 +141,10 @@ function writers(store) {
   };
 }
 
+// Who backend/member.js acts as: it runs on a computer with the database password, needs no
+// sign-in, and is how the first owners get in. The API never acts as SYSTEM.
+export const SYSTEM = Object.freeze({ id: null, role: 'owner', full_name: 'System', active: true });
+
 const isAdmin = (me) => me.role === 'owner' || me.role === 'admin';
 function needAdmin(me) {
   if (!isAdmin(me)) throw forbidden();
@@ -151,11 +157,23 @@ const CLIENT_FIELDS = {
 const PROJECT_DETAILS = ['name', 'client_id', 'type', 'live_url', 'admin_url', 'repo_url', 'description', 'start_date', 'due_date'];
 
 // --- The admin portal ------------------------------------------------------------------------------
-export function createPortal(store) {
+// mailer sends one email (see mail.js); adding someone or sending a new password uses it.
+export function createPortal(store, { mailer } = {}) {
   const col = (name) => store.col(name);
   const find = (name, filter = {}, options = {}) => col(name).find(filter, options);
   const one = (name, filter) => col(name).findOne(filter);
   const { log, changed } = writers(store);
+
+  // Gives a member a new temporary password and emails it to them. The password is only saved
+  // once the email has gone, so a failed email never locks anyone out.
+  // Returns { emailed: true }, or { emailed: false } when the email was only printed (on your computer).
+  async function issuePassword(member, me, { welcome }) {
+    if (!mailer) throw new OpError("Email isn't set up, so the password can't be sent.", 'email_not_configured', 503);
+    const password = temporaryPassword();
+    const { sent } = await mailer(passwordEmail({ member, password, by: me.id ? me.full_name : null, welcome }));
+    await savePassword(store, member.id, password, { temporary: true });
+    return { emailed: sent };
+  }
 
   async function need(name, id, what) {
     const doc = await one(name, { id: idOf(id, what) });
@@ -218,11 +236,13 @@ export function createPortal(store) {
     },
 
     // --- Team ---
+    // Adds someone and emails them their username and a temporary password. If the email fails,
+    // they're still added and invite.problem says why; "Send a new temporary password" tries again.
     async 'team.add'(me, { row }) {
       needAdmin(me);
       const r = obj(row);
       const doc = {
-        id: uuid(), email: emailOf(r.email, 'Google email'), full_name: text(r.full_name, 120, 'Full name', { required: true }),
+        id: uuid(), email: emailOf(r.email, 'Email'), full_name: text(r.full_name, 120, 'Full name', { required: true }),
         role: pick(r.role, LISTS.role, 'Role', 'member'), job_title: text(r.job_title, 80, 'Job title'),
         phone: text(r.phone, 40, 'Phone'), active: true, created_at: now(),
       };
@@ -230,7 +250,25 @@ export function createPortal(store) {
       if (await one('team_members', { email: doc.email })) throw new OpError('That email is already on the team.', 'duplicate', 409);
       await col('team_members').insertOne(doc);
       await log(me, null, 'team.added', `Added ${doc.full_name} to the team as ${doc.role}`);
-      return doc;
+      let invite;
+      try {
+        invite = await issuePassword(doc, me, { welcome: true });
+      } catch (err) {
+        invite = { emailed: false, problem: err.message };
+      }
+      return { ...doc, invite };
+    },
+    // A new temporary password, emailed to them. Their old password and sessions stop working.
+    async 'team.sendPassword'(me, { id }) {
+      needAdmin(me);
+      const member = await need('team_members', id, 'That team member');
+      if (member.role === 'owner' && me.role !== 'owner') throw forbidden(OWNERS_ONLY);
+      if (member.id === me.id) throw new OpError('To change your own password, use "Change my password".');
+      if (!member.active) throw new OpError(`${member.full_name} has no access. Give them access again first.`);
+      const result = await issuePassword(member, me, { welcome: false });
+      await col('sessions').deleteMany({ member_id: member.id });
+      await log(me, null, 'team.password', `Sent ${member.full_name} a new temporary password`);
+      return result;
     },
     async 'team.update'(me, { id, patch }) {
       const old = await need('team_members', id, 'That team member');
@@ -239,7 +277,7 @@ export function createPortal(store) {
       if (has(p, 'full_name')) next.full_name = text(p.full_name, 120, 'Full name', { required: true });
       if (has(p, 'job_title')) next.job_title = text(p.job_title, 80, 'Job title');
       if (has(p, 'phone')) next.phone = text(p.phone, 40, 'Phone');
-      if (has(p, 'email')) next.email = emailOf(p.email, 'Google email');
+      if (has(p, 'email')) next.email = emailOf(p.email, 'Email');
       if (has(p, 'role')) next.role = pick(p.role, LISTS.role, 'Role');
       if (has(p, 'active')) next.active = flag(p.active, 'Access');
       if (!isAdmin(me)) {
@@ -275,6 +313,7 @@ export function createPortal(store) {
       await Promise.all([
         col('project_members').deleteMany({ member_id: old.id }),
         col('sessions').deleteMany({ member_id: old.id }),
+        col('credentials').deleteMany({ member_id: old.id }),
         clear('tasks', 'assignee_id'), clear('tasks', 'created_by'), clear('threads', 'assignee_id'),
         clear('messages', 'member_id'), clear('payments', 'recorded_by'), clear('activity', 'actor_member_id'),
       ]);
@@ -554,28 +593,11 @@ export function createPortal(store) {
   };
 
   return {
-    // Runs one operation for a signed-in team member.
+    // Runs one operation for a signed-in team member (or SYSTEM).
     async run(me, op, args = {}) {
       if (!me || !me.active) throw new OpError('Please sign in again.', 'signed_out', 401);
       if (typeof op !== 'string' || !Object.prototype.hasOwnProperty.call(ops, op)) throw new OpError('Unknown request.', 'unknown_op', 404);
       return ops[op](me, obj(args));
-    },
-    // First sign-in: makes OWNER_EMAIL the owner while the team has no active owner.
-    async bootstrapOwner(email, fullName) {
-      if (await otherOwner(null)) return null;
-      const address = emailOf(email, 'Owner email');
-      const existing = await one('team_members', { email: address });
-      if (existing) {
-        await col('team_members').updateOne({ id: existing.id }, { $set: { role: 'owner', active: true } });
-        return { ...existing, role: 'owner', active: true };
-      }
-      const doc = {
-        id: uuid(), email: address, full_name: text(fullName, 120, 'Full name') || address.split('@')[0],
-        role: 'owner', job_title: null, phone: null, active: true, created_at: now(),
-      };
-      await col('team_members').insertOne(doc);
-      await log(null, null, 'team.added', `Added ${doc.full_name} to the team as owner`);
-      return doc;
     },
   };
 }

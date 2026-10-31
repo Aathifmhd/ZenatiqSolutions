@@ -1,8 +1,9 @@
-// An in-memory stand-in for the part of MongoDB that core/ops.js uses. Demo mode keeps it in
-// localStorage. It follows MongoDB's rules where they matter here: { field: null } also matches
-// a missing field, $ne matches missing fields, and sorting puts empty values first.
+// An in-memory stand-in for the part of MongoDB that the API uses, for the local demo and the
+// tests. It follows MongoDB's rules where they matter here: { field: null } also matches a
+// missing field, $ne matches missing fields, and sorting puts empty values first.
 
-const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+// Copies keep dates as dates, as MongoDB does (sessions expire by date).
+const clone = (value) => structuredClone(value);
 const isOps = (cond) => cond && typeof cond === 'object' && !Array.isArray(cond) && Object.keys(cond).some((k) => k.startsWith('$'));
 
 function compare(a, b) {

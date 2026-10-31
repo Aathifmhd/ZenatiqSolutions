@@ -1,10 +1,28 @@
-// Zenatiq admin: every read and write goes through here. The live portal sends each operation to
-// the portal API (api/portal.js, backed by MongoDB); demo mode runs the same operations in this
-// browser. The rules about who may do what live in core/ops.js, not in this file.
+// Zenatiq admin: every read and write goes through here, as one operation sent to the portal API
+// (POST /api/portal). The rules about who may do what live on the server, in
+// backend/core/ops.js, not in this file.
 
-let send;
-export const setTransport = (fn) => { send = fn; };
-const call = (op, args = {}) => send(op, args);
+// Talks to the API on this site. The session lives in an HttpOnly cookie.
+export async function request(method, path, body) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method, credentials: 'same-origin',
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error('Could not reach the server. Check your internet connection.');
+  }
+  const json = await res.json().catch(() => null);
+  if (res.ok && json) return json;
+  // Signed out somewhere else, or access was removed: back to the sign-in screen.
+  if (res.status === 401 && path === '/api/portal') location.reload();
+  const err = new Error(json?.error?.message || `The server couldn't answer (error ${res.status}).`);
+  throw Object.assign(err, { code: json?.error?.code, status: res.status, email: json?.error?.email });
+}
+
+const call = async (op, args = {}) => (await request('POST', '/api/portal', { op, args })).data;
 
 // Lists that almost every page needs, loaded once and refreshed after changes.
 export const store = {
@@ -24,7 +42,11 @@ export const team = {
   add: (row) => call('team.add', { row }),
   update: (id, patch) => call('team.update', { id, patch }),
   remove: (id) => call('team.remove', { id }),
+  sendPassword: (id) => call('team.sendPassword', { id }),
 };
+
+// The signed-in member's own password. Their other sessions end.
+export const changePassword = (password, newPassword) => request('POST', '/api/auth', { op: 'password', password, newPassword });
 
 export const clients = {
   add: (row) => call('clients.add', { row }),
@@ -75,8 +97,10 @@ export const activity = {
   list: ({ projectId, limit = 50, before } = {}) => call('activity.list', { projectId, limit, before }),
 };
 
-// Demo mode only: pretend a client wrote through the Contact with Zenatiq widget.
+// The local demo only: pretend a client wrote through the Contact with Zenatiq widget, and put
+// the sample data back the way it was.
 export const simulateClientMessage = (projectId, fields) => call('demo.clientMessage', { projectId, ...fields });
+export const resetDemo = () => call('demo.reset');
 
 // Live updates: asks what changed every 12 seconds (every minute in a background tab) and calls
 // onChange(table, payload) once for each change, the way the pages expect.

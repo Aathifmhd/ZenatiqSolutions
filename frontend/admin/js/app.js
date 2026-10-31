@@ -1,13 +1,11 @@
 // Zenatiq admin portal: start-up, sign-in, layout, page routing and live updates.
-import { html, raw, icon, avatar, friendly, toast, LABELS } from './lib.js';
+import { html, icon, avatar, friendly, toast, LABELS } from './lib.js';
 import * as db from './data.js';
 
-const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
 const root = document.getElementById('app');
-// Demo mode (sample data in this browser only) is limited to local previews.
-let demo = false;
-let demoApi = null;
-let googleClientId = '';
+// The local demo (npm run dev without a database) works on sample data. The server says when,
+// along with the sample account to fill in on the sign-in page.
+let demo = null;
 
 const VIEWS = {
   dashboard: () => import('./views/dashboard.js'),
@@ -32,8 +30,6 @@ const NAV = [
   { route: 'activity', href: '#/activity', label: 'Activity', icon: 'clock' },
 ];
 
-const GOOGLE_G = raw(`<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`);
-
 let me;
 const current = { token: null, mod: null, ctx: null };
 
@@ -44,57 +40,26 @@ start().catch((err) => {
 });
 
 async function start() {
-  if (isLocal && new URLSearchParams(location.search).has('demo')) return startDemo();
-  let status;
-  try {
-    status = await request('GET', '/api/auth');
-  } catch (err) {
-    // A local preview without the API (for example firebase serve) runs the demo instead.
-    // Errors from the API itself, like an unreachable database, are shown.
-    if (isLocal && !err.code) return startDemo();
-    throw err;
-  }
-  if (!status.configured) return isLocal ? startDemo() : renderSetup(status.missing);
-  googleClientId = status.googleClientId;
-  db.setTransport(async (op, args) => (await request('POST', '/api/portal', { op, args })).data);
+  const status = await db.request('GET', '/api/auth');
+  if (!status.configured) return renderSetup(status.missing);
+  demo = status.demo || null;
   if (!status.me) return renderSignIn();
   await enter(status.me);
 }
 
-async function startDemo() {
-  demo = true;
-  const { createDemo } = await import('./demo.js');
-  demoApi = createDemo();
-  db.setTransport(demoApi.call);
-  const member = demoApi.signedIn() && demoApi.me();
-  if (!member) return renderSignIn();
-  await enter(member);
-}
-
-// Talks to the portal's API on this site. The session lives in an HttpOnly cookie.
-async function request(method, path, body) {
-  let res;
+// Signs in with { email, password }. A temporary password first asks for their own one.
+async function signIn(body) {
   try {
-    res = await fetch(path, {
-      method, credentials: 'same-origin',
-      headers: body ? { 'Content-Type': 'application/json' } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new Error('Could not reach the server. Check your internet connection.');
+    const answer = await db.request('POST', '/api/auth', { op: 'signin', ...body });
+    if (answer.mustChange) return renderNewPassword(body);
+    await enter(answer.me);
+  } catch (err) {
+    showSignInError(friendly(err));
   }
-  const json = await res.json().catch(() => null);
-  if (res.ok && json) return json;
-  // Signed out somewhere else, or access was removed: back to the sign-in screen.
-  if (res.status === 401 && path === '/api/portal' && me) location.reload();
-  const err = new Error(json?.error?.message || `The server couldn't answer (error ${res.status}).`);
-  throw Object.assign(err, { code: json?.error?.code, status: res.status, email: json?.error?.email });
 }
 
 async function signOut() {
-  if (demo) demoApi.signOut();
-  else await request('POST', '/api/auth', { op: 'signout' }).catch(() => {});
-  try { window.google?.accounts.id.disableAutoSelect(); } catch { /* not loaded */ }
+  await db.request('POST', '/api/auth', { op: 'signout' }).catch(() => {});
   location.reload();
 }
 
@@ -132,19 +97,46 @@ function renderSignIn() {
       <h1>Admin portal</h1>
       <p>Projects, tasks, payments and client messages for the Zenatiq team, all in one place.</p>
       <p class="auth__error" role="alert" hidden></p>
-      ${demo
-        ? html`<button class="btn btn--google" type="button" data-shell="google">${GOOGLE_G}<span>Continue with Google</span></button>`
-        : html`<div class="auth__google" data-gsi><span class="spinner"></span></div>`}
-      <p class="auth__fine">Only people an owner or admin has added to the team can get in.</p>
-      ${demo ? html`<p class="auth__demo">Demo mode: sample data, stored only in this browser.</p>` : ''}
+      <form class="auth__form" data-signin>
+        <label class="field"><span>Email</span><input class="input" name="email" type="email" autocomplete="username" required maxlength="200" value="${demo?.email || ''}"></label>
+        <label class="field"><span>Password</span><input class="input" name="password" type="password" autocomplete="current-password" required maxlength="200" value="${demo?.password || ''}"></label>
+        <button class="btn btn--primary" type="submit">Sign in</button>
+      </form>
+      <p class="auth__fine">An owner or admin adds you to the team and you get your password by email. Forgot it? Ask them to send you a new one.</p>
+      ${demo ? html`<p class="auth__demo">Demo mode: sample data on this computer only. The other sample people sign in with the same password.</p>` : ''}
     </div></div>`);
-  if (!demo) return mountGoogleButton(root.querySelector('[data-gsi]'));
-  root.querySelector('[data-shell="google"]').addEventListener('click', () => {
-    demoApi.signIn();
-    const member = demoApi.me();
-    if (member) return enter(member);
-    demoApi.reset();
-    location.reload();
+  whenSent(root.querySelector('[data-signin]'), (fd) => signIn({ email: fd.get('email'), password: fd.get('password') }));
+}
+
+// First sign-in with a temporary password: they choose their own before going in.
+function renderNewPassword({ email, password }) {
+  root.innerHTML = String(html`
+    <div class="auth"><div class="auth__card">
+      <img class="auth__logo" src="/assets/zenatiq-logo.png" alt="Zenatiq Solutions" width="519" height="150">
+      <h1>Choose your password</h1>
+      <p>You signed in with a temporary password. Choose your own to finish. Use at least 10 characters.</p>
+      <p class="auth__error" role="alert" hidden></p>
+      <form class="auth__form" data-new-password>
+        <input name="email" type="email" autocomplete="username" value="${email}" hidden>
+        <label class="field"><span>New password</span><input class="input" name="newPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="200"></label>
+        <label class="field"><span>New password again</span><input class="input" name="again" type="password" autocomplete="new-password" required minlength="10" maxlength="200"></label>
+        <button class="btn btn--primary" type="submit">Save and sign in</button>
+      </form>
+    </div></div>`);
+  whenSent(root.querySelector('[data-new-password]'), (fd) => {
+    if (fd.get('newPassword') !== fd.get('again')) return showSignInError("The two passwords don't match.");
+    return signIn({ email, password, newPassword: fd.get('newPassword') });
+  });
+}
+
+// Runs send(formData) when the form is sent, with its button off until that's done.
+function whenSent(form, send) {
+  ([...form.querySelectorAll('input:not([hidden])')].find((input) => !input.value) || form.querySelector('[type=submit]')).focus();
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const button = form.querySelector('[type=submit]');
+    button.disabled = true;
+    try { await send(new FormData(form)); } finally { button.disabled = false; }
   });
 }
 
@@ -153,55 +145,10 @@ const showSignInError = (message) => {
   if (box) Object.assign(box, { textContent: message, hidden: false });
 };
 
-// Google's own "Sign in with Google" button. It hands back a signed ID token, which the
-// server checks before starting a session.
-async function mountGoogleButton(box) {
-  try {
-    await new Promise((resolve, reject) => {
-      if (window.google?.accounts?.id) return resolve();
-      const s = Object.assign(document.createElement('script'), { src: 'https://accounts.google.com/gsi/client', async: true });
-      s.onload = resolve;
-      s.onerror = reject;
-      document.head.append(s);
-    });
-    google.accounts.id.initialize({ client_id: googleClientId, callback: onGoogleSignIn, ux_mode: 'popup', auto_select: false, context: 'signin' });
-    box.replaceChildren();
-    google.accounts.id.renderButton(box, {
-      type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'pill', logo_alignment: 'center',
-      width: Math.min(Math.max(box.clientWidth, 220), 360), locale: 'en',
-    });
-  } catch {
-    box.replaceChildren();
-    showSignInError('Google sign-in could not load. Check your internet connection, then reload the page.');
-  }
-}
-
-async function onGoogleSignIn({ credential }) {
-  try {
-    const { me: member } = await request('POST', '/api/auth', { op: 'google', credential });
-    await enter(member);
-  } catch (err) {
-    if (err.code === 'no_access') return renderNoAccess(err.email);
-    showSignInError(friendly(err));
-  }
-}
-
-function renderNoAccess(email) {
-  root.innerHTML = String(html`
-    <div class="auth"><div class="auth__card">
-      <img class="auth__logo" src="/assets/zenatiq-logo.png" alt="Zenatiq Solutions" width="519" height="150">
-      <h1>You're not on the team yet</h1>
-      <p><b>${email}</b> isn't on the Zenatiq team. Ask an owner or admin to add this Google account
-        on the Team page, then sign in again.</p>
-      <button class="btn btn--primary" type="button" data-shell="again">Use another Google account</button>
-    </div></div>`);
-  root.querySelector('[data-shell="again"]').addEventListener('click', () => renderSignIn());
-}
-
 // --- Portal layout --------------------------------------------------------------
 function renderShell() {
   root.innerHTML = String(html`
-    ${demo ? html`<div class="demo-bar">Demo mode · sample data saved in this browser only ·
+    ${demo ? html`<div class="demo-bar">Demo mode · sample data on this computer only ·
       <button type="button" data-shell="reset-demo">Reset sample data</button></div>` : ''}
     <div class="app">
       <aside class="side" id="side" aria-label="Portal">
@@ -239,7 +186,9 @@ function renderShell() {
     if (action === 'signout') signOut();
     if (action === 'open-nav') document.body.classList.add('nav-open');
     if (action === 'close-nav') closeNav();
-    if (action === 'reset-demo') { demoApi.reset(); location.reload(); }
+    if (action === 'reset-demo') {
+      try { await db.resetDemo(); location.reload(); } catch (err) { toast(friendly(err), 'error'); }
+    }
     if (action === 'alerts') {
       if (!('Notification' in window)) return toast('This browser does not support desktop alerts.', 'warn');
       const result = await Notification.requestPermission();

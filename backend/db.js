@@ -1,9 +1,9 @@
-// The MongoDB connection for the API functions, reused while a function instance stays warm.
+// The MongoDB connection, reused for as long as the server (or a warm Vercel function) runs.
 import { MongoClient } from 'mongodb';
 import { attachDatabasePool } from '@vercel/functions';
 
 // Raise this when the indexes below change; each deployment then creates them once.
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const INDEXES = [
   ['team_members', { id: 1 }, { unique: true }],
   ['team_members', { email: 1 }, { unique: true }],
@@ -30,10 +30,11 @@ const INDEXES = [
   ['sessions', { id: 1 }, { unique: true }],
   ['sessions', { member_id: 1 }],
   ['sessions', { expires_at: 1 }, { expireAfterSeconds: 0 }],
+  ['credentials', { member_id: 1 }, { unique: true }],
+  // Wrong passwords only count for 15 minutes; MongoDB deletes them after an hour.
+  ['login_attempts', { email: 1, at: -1 }],
+  ['login_attempts', { at: 1 }, { expireAfterSeconds: 3600 }],
 ];
-
-export const missingSettings = () =>
-  ['MONGODB_URI', 'GOOGLE_CLIENT_ID', 'OWNER_EMAIL'].filter((name) => !process.env[name]?.trim());
 
 let ready = null;
 export function database() {

@@ -1,4 +1,4 @@
-// Request and response helpers shared by the API functions in /api.
+// Request and response helpers shared by the API routes in backend/routes.
 
 const MAX_BODY = 64 * 1024;
 

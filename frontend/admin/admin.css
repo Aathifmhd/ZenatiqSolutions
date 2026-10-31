@@ -49,9 +49,6 @@ code{font:500 .86em/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;backgroun
 .btn--danger-ghost{background:#fff;border-color:#f3c3bf;color:var(--red-deep)}
 .btn--danger-ghost:hover{background:var(--red-soft)}
 .btn--sm{min-height:34px;padding:0 12px;font-size:.86rem;border-radius:9px}
-.btn--google{width:100%;min-height:50px;background:#fff;border-color:var(--line-2);color:var(--text);font-size:1rem;gap:12px}
-.btn--google:hover{background:var(--paper)}
-.btn--google svg{width:22px;height:22px}
 .icon-btn{display:inline-grid;place-items:center;width:38px;height:38px;border:0;border-radius:10px;background:transparent;color:inherit}
 .icon-btn:hover{background:rgba(13,13,15,.06)}
 .icon-btn--sm{width:30px;height:30px;border-radius:8px}
@@ -114,7 +111,8 @@ select.input--sm{padding-right:30px}
 .auth__card p{color:var(--muted)}
 .auth__error{padding:10px 12px;border-radius:10px;background:var(--red-soft);color:var(--red-deep)!important;font-weight:600}
 .auth__fine{font-size:.85rem}
-.auth__google{display:flex;align-items:center;justify-content:center;min-height:50px}
+.auth__form{display:grid;gap:14px;text-align:left}
+.auth__form .btn{width:100%;min-height:48px;margin-top:2px;font-size:1rem}
 .auth__demo{padding:8px;border-radius:8px;background:#fff6d6;color:#6b5200!important;font-size:.85rem}
 .boot,.loading{display:grid;place-items:center;min-height:60vh}
 .spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite}

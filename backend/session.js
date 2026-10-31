@@ -1,32 +1,10 @@
-// Signing in to the admin portal: checking Google sign-ins, and sessions kept in an HttpOnly
-// cookie. The database stores only a hash of each session token.
+// Sessions for the admin portal, kept in an HttpOnly cookie. The database stores only a hash of
+// each session token.
 import { createHash, randomBytes } from 'node:crypto';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { HttpError } from './http.js';
 
 const COOKIE = 'zq_session';
 const DAYS = 30;
-const googleKeys = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 const hash = (token) => createHash('sha256').update(token).digest('hex');
-
-// Checks a Google ID token from the "Sign in with Google" button: signed by Google, made for this
-// portal's client ID, not expired, and for a verified email address.
-export async function verifyGoogle(credential, clientId) {
-  const failed = () => new HttpError('Google sign-in did not work. Please try again.', 'bad_token', 401);
-  if (typeof credential !== 'string' || credential.length > 8192) throw failed();
-  let payload;
-  try {
-    ({ payload } = await jwtVerify(credential, googleKeys, {
-      issuer: ['https://accounts.google.com', 'accounts.google.com'], audience: clientId,
-    }));
-  } catch {
-    throw failed();
-  }
-  if (typeof payload.email !== 'string' || !(payload.email_verified === true || payload.email_verified === 'true')) {
-    throw new HttpError('This Google account has no verified email address.', 'unverified', 403);
-  }
-  return { email: payload.email.trim().toLowerCase(), name: typeof payload.name === 'string' ? payload.name : '' };
-}
 
 export async function startSession(store, memberId) {
   const token = randomBytes(32).toString('base64url');
@@ -41,6 +19,12 @@ export async function startSession(store, memberId) {
 export async function endSession(req, store) {
   const token = readCookie(req);
   if (token) await store.col('sessions').deleteOne({ id: hash(token) });
+}
+
+// After a password change: signs the member out everywhere except this browser.
+export async function endOtherSessions(req, store, memberId) {
+  const token = readCookie(req);
+  await store.col('sessions').deleteMany({ member_id: memberId, id: { $ne: token ? hash(token) : '' } });
 }
 
 // The signed-in team member, or null. Access removed on the Team page ends sessions at once.
