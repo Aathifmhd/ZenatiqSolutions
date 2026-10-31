@@ -2,6 +2,16 @@
 // (POST /api/portal). The rules about who may do what live on the server, in
 // backend/core/ops.js, not in this file.
 
+// The deployment this page came from. When the API starts answering from a newer one, the page
+// fires "portal-update" so it can offer a reload: its code no longer matches the server's.
+let build = null;
+const checkBuild = (res) => {
+  const latest = res.headers.get('x-portal-build');
+  if (!latest) return;
+  if (build && latest !== build) window.dispatchEvent(new CustomEvent('portal-update'));
+  build ||= latest;
+};
+
 // Talks to the API on this site. The session lives in an HttpOnly cookie.
 export async function request(method, path, body) {
   let res;
@@ -14,6 +24,7 @@ export async function request(method, path, body) {
   } catch {
     throw new Error('Could not reach the server. Check your internet connection.');
   }
+  checkBuild(res);
   const json = await res.json().catch(() => null);
   if (res.ok && json) return json;
   // Signed out somewhere else, or access was removed: back to the sign-in screen.
@@ -95,6 +106,11 @@ export const money = {
 
 export const activity = {
   list: ({ projectId, limit = 50, before } = {}) => call('activity.list', { projectId, limit, before }),
+};
+
+// A project's GitHub commits, newest first. branch: null for the default branch.
+export const github = {
+  commits: (projectId, { branch = null, page = 1 } = {}) => call('github.commits', { projectId, branch, page }),
 };
 
 // The local demo only: pretend a client wrote through the Contact with Zenatiq widget, and put

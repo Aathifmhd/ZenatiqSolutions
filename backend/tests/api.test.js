@@ -259,6 +259,11 @@ test('unknown operations: 404', async () => {
   assert.ok(r.status === 404 && r.json.error.code === 'unknown_op', JSON.stringify(r.json));
   assert.equal((await api('/api/auth', { body: { op: 'google' } })).json.error.code, 'unknown_op', 'Google sign-in is gone');
 });
+test('GitHub commits are asked for through the portal API', async () => {
+  const p = (await run(ownerCookie, 'projects.add', { row: { name: 'No repository yet' } })).json.data;
+  const r = await run(memberCookie, 'github.commits', { projectId: p.id });
+  assert.ok(r.status === 400 && r.json.error.code === 'no_repo', JSON.stringify(r.json));
+});
 test('the demo operations do nothing on the real portal', async () => {
   assert.equal((await run(ownerCookie, 'demo.reset')).json.error.code, 'unknown_op');
   assert.equal((await run(ownerCookie, 'demo.clientMessage', { projectId: 'x' })).json.error.code, 'unknown_op');
@@ -311,6 +316,14 @@ test('signing out ends the session', async () => {
 });
 
 // --- Addresses and methods -------------------------------------------------------------------
+test('answers say which deployment sent them, so open portals notice updates', async () => {
+  assert.equal((await api('/api/auth')).headers.get('x-portal-build'), null, 'nothing to say on your own computer');
+  await withEnv({ VERCEL_DEPLOYMENT_ID: 'dpl_test123' }, async () => {
+    const deployed = await serve(createApp({ store: new MemoryStore({}), mailer }));
+    assert.equal((await deployed('/api/auth')).headers.get('x-portal-build'), 'dpl_test123');
+    assert.equal((await deployed('/api/nothing')).headers.get('x-portal-build'), 'dpl_test123');
+  });
+});
 test('unknown API addresses: 404', async () => {
   const r = await api('/api/nothing');
   assert.ok(r.status === 404 && r.json.error.code === 'not_found', JSON.stringify(r.json));
@@ -360,6 +373,29 @@ test('demo: the sample accounts sign in, a pretend client message arrives, reset
   await call('demo.reset');
   assert.equal((await call('threads.unreadCount')).data, unread, 'the sample data is back and the sign-in still works');
 });
+test('the demo never sends real email, even with a Resend key in .env', () => withEnv({ RESEND_API_KEY: 're_real_key_in_env' }, async () => {
+  const demo = await serve(createApp({ demo: await createDemo() }));
+  const sample = (await demo('/api/auth')).json.demo;
+  const cookie = cookieOf(await demo('/api/auth', { body: { op: 'signin', ...sample } }));
+  const realFetch = globalThis.fetch;
+  const printed = [];
+  const log = console.log;
+  let resendCalled = false;
+  globalThis.fetch = (url, init) => {
+    if (String(url).includes('resend.com')) resendCalled = true;
+    return realFetch(url, init);
+  };
+  console.log = (line) => printed.push(line);
+  try {
+    const r = await demo('/api/portal', { body: { op: 'team.add', args: { row: { email: 'someone@example.com', full_name: 'Some One' } } }, cookie });
+    assert.deepEqual(r.json.data.invite, { emailed: false });
+  } finally {
+    globalThis.fetch = realFetch;
+    console.log = log;
+  }
+  assert.equal(resendCalled, false, 'Resend must not be called from the demo');
+  assert.match(printed.join('\n'), /Email, not sent \(demo\)[\s\S]*To: someone@example\.com/);
+}));
 test('the demo refuses to run on Vercel', async () => {
   const demo = await createDemo();
   await withEnv({ VERCEL: '1' }, () => assert.throws(() => createApp({ demo }), /own computer/));

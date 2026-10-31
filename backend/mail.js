@@ -7,13 +7,14 @@ const FROM = 'Zenatiq Solutions <portal@zenatiqsolutions.com>';
 const PORTAL = 'https://www.zenatiqsolutions.com/admin';
 
 // Returns a function that sends one email: { to, subject, text, html } -> { sent }.
-// sent is false when the email was only printed.
-export function createMailer() {
+// sent is false when the email was only printed. printOnly is for the demo, which never sends
+// real email, even when .env has a Resend key.
+export function createMailer({ printOnly = false } = {}) {
   return async function sendEmail({ to, subject, text, html }) {
     const key = process.env.RESEND_API_KEY?.trim();
-    if (!key) {
-      if (process.env.VERCEL) throw new HttpError("Email isn't set up yet. Add RESEND_API_KEY in Vercel, then redeploy.", 'email_not_configured', 503);
-      console.log(`\n--- Email, not sent (RESEND_API_KEY isn't set) ---\nTo: ${to}\nSubject: ${subject}\n\n${text}\n---\n`);
+    if (!key || printOnly) {
+      if (process.env.VERCEL && !printOnly) throw new HttpError("Email isn't set up yet. Add RESEND_API_KEY in Vercel, then redeploy.", 'email_not_configured', 503);
+      console.log(`\n--- Email, not sent (${printOnly ? 'demo' : "RESEND_API_KEY isn't set"}) ---\nTo: ${to}\nSubject: ${subject}\n\n${text}\n---\n`);
       return { sent: false };
     }
     let res;

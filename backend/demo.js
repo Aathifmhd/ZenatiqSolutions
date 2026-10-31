@@ -34,7 +34,9 @@ function seed(ownerId, passwordHash) {
     project('Gloss Workx website', gloss, 'website', 'live', 'https://glossworkx-landing-page.web.app'),
     project('YYR International website', yyr, 'website', 'maintenance', 'https://yyr-international-trading.web.app'),
     project('Amore concept site', amore, 'website', 'lead', 'https://amore-icecream.web.app', { due_date: dateIn(-1) }),
-    project('Zenatiq admin portal', null, 'other', 'review', 'https://www.zenatiqsolutions.com/admin', { start_date: dateIn(-7), due_date: dateIn(3) }),
+    project('Zenatiq admin portal', null, 'other', 'review', 'https://www.zenatiqsolutions.com/admin', {
+      start_date: dateIn(-7), due_date: dateIn(3), repo_url: 'https://github.com/Aathifmhd/ZenatiqSolutions',
+    }),
   ];
   const [pVeloura, pRegal, pCargo, pGloss, pYyr, pAmore, pPortal] = projects;
   const project_members = [

@@ -127,12 +127,12 @@ select.input--sm{padding-right:30px}
 .side__brand img{height:32px;width:auto}
 .side__brand .side__mark{display:none;width:32px;border-radius:8px}
 .side__brand span{padding:3px 8px;border-radius:6px;background:var(--red);font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
-.side__nav{display:grid;gap:3px}
+.side__nav{display:grid;grid-template-columns:minmax(0,1fr);gap:3px}
 .side__nav a{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;color:#c9c4bc;font-weight:500;text-decoration:none;transition:background-color .15s,color .15s}
 .side__nav a:hover{background:rgba(255,255,255,.06);color:#fff}
 .side__nav a.is-active{background:rgba(255,255,255,.1);color:#fff;box-shadow:inset 3px 0 0 var(--red)}
 .side__nav a span{flex:1}
-.side__foot{display:grid;gap:10px;margin-top:auto}
+.side__foot{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:auto}
 .side__alerts{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--ink-line);border-radius:10px;background:none;color:#c9c4bc;font-size:.86rem;font-weight:500;text-align:left}
 .side__alerts:hover{color:#fff;background:rgba(255,255,255,.05)}
 .side__me{display:flex;align-items:center;gap:10px;padding:12px 8px 0;border-top:1px solid var(--ink-line)}
@@ -225,15 +225,16 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
 
 /* ---------- projects ---------- */
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
-.pcard{position:relative;display:grid;gap:8px;padding:18px;border:1px solid var(--line);border-radius:var(--radius);background:#fff;transition:border-color .15s,box-shadow .15s,transform .15s}
+.pcard{position:relative;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:18px;border:1px solid var(--line);border-radius:var(--radius);background:#fff;transition:border-color .15s,box-shadow .15s,transform .15s}
 .pcard:hover{border-color:var(--line-2);box-shadow:var(--shadow);transform:translateY(-2px)}
 .pcard__link{position:absolute;inset:0;z-index:1;border-radius:var(--radius)}
 .pcard__top{display:flex;align-items:center;justify-content:space-between}
 .pcard__icon{display:grid;place-items:center;width:40px;height:40px;border-radius:11px;background:var(--ink);color:#fff}
-.pcard h3{margin-top:4px;font-size:1.12rem}
-.pcard__client{color:var(--muted);font-size:.86rem}
+.pcard h3{margin-top:4px;font-size:1.12rem;overflow-wrap:anywhere}
+.pcard__client{color:var(--muted);font-size:.86rem;overflow-wrap:anywhere}
 .pcard__url{position:relative;z-index:2;display:inline-flex;align-items:center;gap:6px;width:max-content;max-width:100%;overflow:hidden;color:var(--red-deep);font-size:.85rem;font-weight:600;text-decoration:none;white-space:nowrap;text-overflow:ellipsis}
-.pcard__url .i{width:14px;height:14px}
+.pcard__url .i{width:14px;height:14px;flex:none}
+.pcard__url span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .pcard__url:hover{text-decoration:underline}
 .pcard__url--none{color:var(--muted);font-weight:400}
 .pcard__foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;padding-top:12px;border-top:1px solid var(--line)}
@@ -403,6 +404,48 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
 .modal__error{margin:0 20px 12px;padding:10px 12px;border-radius:10px;background:var(--red-soft);color:var(--red-deep);font-weight:600;font-size:.9rem}
 .modal__foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--line);background:var(--paper);border-radius:0 0 18px 18px}
 
+/* ---------- GitHub commits (project → Activity) ---------- */
+.seg a{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid var(--line);border-radius:99px;background:#fff;color:var(--muted);font-size:.84rem;font-weight:600;text-decoration:none}
+.seg a:hover{color:var(--text);border-color:var(--line-2)}
+.seg a .i{width:15px;height:15px}
+.seg a.is-on{background:var(--ink);border-color:var(--ink);color:#fff}
+.seg--tabs{margin-bottom:14px}
+.commits__head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.commits__repo{display:inline-flex;align-items:center;gap:8px;min-width:0;color:var(--text);text-decoration:none}
+.commits__repo b{overflow-wrap:anywhere;font-size:1rem}
+.commits__repo:hover b{color:var(--red)}
+.commits__repo .i:last-child{width:14px;height:14px;color:var(--muted)}
+.commits__count{color:var(--muted);font-size:.88rem}
+.commits__count b{color:var(--text)}
+.commits__branch{display:inline-flex;align-items:center;gap:6px;margin-left:auto}
+.commits__branch .input{width:auto;max-width:220px}
+.commits__day{margin:20px 0 8px;color:var(--muted);font:700 .74rem/1.2 var(--sans);letter-spacing:.05em;text-transform:uppercase}
+.commits__list{display:grid;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.commit{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:#fff}
+.commit + .commit{border-top:1px solid var(--line)}
+.commit:hover{background:var(--paper)}
+.commit__av{object-fit:cover;background:var(--sand)}
+.commit__main{flex:1;min-width:0}
+.commit__title{display:block;overflow-wrap:anywhere;color:var(--text);font-weight:600;line-height:1.4;text-decoration:none}
+.commit__title:hover{color:var(--red)}
+.commit__meta{margin-top:3px;color:var(--muted);font-size:.83rem}
+.commit__meta b{color:var(--text);font-weight:600}
+.commit__more{margin-top:4px}
+.commit__more summary{width:max-content;cursor:pointer;color:var(--muted);font-size:.8rem}
+.commit__more pre{margin-top:6px;padding:10px 12px;border-radius:8px;background:var(--paper);font:.82rem/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.commit__sha{flex:none;margin-top:1px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text);font:600 .78rem/1.4 ui-monospace,Consolas,monospace;text-decoration:none}
+.commit__sha:hover{border-color:var(--ink)}
+.commits__end{margin-top:16px;color:var(--muted);font-size:.86rem;text-align:center}
+@media (max-width:640px){
+  .commits__branch{margin-left:0}
+  .commit{padding:12px}
+  .commit__sha{display:none}
+}
+
+/* ---------- "The portal has been updated" ---------- */
+.update-bar{position:fixed;left:50%;bottom:20px;z-index:210;display:flex;align-items:center;gap:14px;padding:10px 12px 10px 18px;border-radius:14px;background:var(--ink);color:#fff;font-size:.9rem;font-weight:600;box-shadow:var(--shadow);transform:translateX(-50%);animation:toast-in .2s ease-out}
+.update-bar .btn{background:var(--red);border-color:var(--red);color:#fff}
+
 /* ---------- toasts ---------- */
 .toasts{position:fixed;right:20px;bottom:20px;z-index:200;display:grid;gap:8px;max-width:min(380px,calc(100% - 40px))}
 .toast{padding:12px 16px;border-radius:12px;background:var(--ink);color:#fff;font-weight:600;font-size:.9rem;box-shadow:var(--shadow);animation:toast-in .2s ease-out;transition:opacity .3s,transform .3s}
@@ -455,7 +498,8 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
    phones the menu button. */
 @media (hover:hover) and (min-width:901px){
   .app{grid-template-columns:var(--rail) minmax(0,1fr)}
-  .side{z-index:65;width:var(--rail);overflow-x:hidden;transition:width .18s ease .15s,box-shadow .18s ease .15s}
+  .side{z-index:65;width:var(--rail);overflow-x:hidden;scrollbar-width:none;transition:width .18s ease .15s,box-shadow .18s ease .15s}
+  .side::-webkit-scrollbar{display:none}
   .side:is(:hover,:has(:focus-visible)){width:var(--side);box-shadow:18px 0 40px -12px rgba(13,13,15,.45);transition-delay:.1s}
   .side__brand{padding:4px 6px 10px}
   .side__brand .side__mark{display:block}
@@ -463,12 +507,20 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
   .side:is(:hover,:has(:focus-visible)) .side__brand .side__mark{display:none}
   .side:is(:hover,:has(:focus-visible)) .side__brand .side__logo{display:block}
   .side:is(:hover,:has(:focus-visible)) .side__brand span{display:inline}
-  .side__nav a,.side__alerts{position:relative;white-space:nowrap}
+  .side__nav a,.side__alerts{position:relative;overflow:hidden;white-space:nowrap}
+  /* Folded, the alerts button looks like the other icons; open, it gets its outline back. */
+  .side__alerts{border-color:transparent}
+  .side:is(:hover,:has(:focus-visible)) .side__alerts{border-color:var(--ink-line)}
   .side__nav a span,.side__alerts span,.side__who,.side__me .icon-btn{opacity:0;transition:opacity .12s}
   .side:is(:hover,:has(:focus-visible)) :is(.side__nav a span,.side__alerts span,.side__who,.side__me .icon-btn){opacity:1;transition-delay:.12s}
   /* While narrow, the unread count sits on the inbox icon. */
   .side__nav .badge{position:absolute;top:2px;left:26px;min-width:17px;height:17px;padding:0 4px;font-size:.62rem;box-shadow:0 0 0 2px var(--ink)}
   .side:is(:hover,:has(:focus-visible)) .side__nav .badge{position:static;min-width:20px;height:20px;padding:0 6px;font-size:.72rem;box-shadow:none}
   .side__me{padding-left:4px}
+}
+/* The demo's banner stays at the top of wide screens, so the sidebar starts below it. */
+@media (min-width:901px){
+  .demo-bar{line-height:22px}
+  .demo-bar + .app .side{top:36px;height:calc(100vh - 36px)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

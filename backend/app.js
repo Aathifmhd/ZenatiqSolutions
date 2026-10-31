@@ -8,6 +8,7 @@ import express from 'express';
 import { database, storeFor } from './db.js';
 import { send } from './http.js';
 import { createMailer } from './mail.js';
+import { createGitHub } from './github.js';
 import { authRoutes } from './routes/auth.js';
 import { portalRoutes } from './routes/portal.js';
 import { connectRoutes } from './routes/connect.js';
@@ -15,13 +16,17 @@ import { connectRoutes } from './routes/connect.js';
 // The live site passes no options. The local server and the tests use:
 //   demo:   sample data in memory, with sample accounts (backend/demo.js)
 //   store:  a stand-in for MongoDB with the same methods (core/memory.js)
-//   mailer: sends email (mail.js); the tests keep the emails instead
+//   mailer: sends email (mail.js); the demo only prints it, and the tests keep it
+//   github: reads commit histories (github.js); the tests use a stand-in
 //   pages:  a folder of pages to serve as well, the way Vercel serves frontend/
-export function createApp({ demo = null, store = demo?.store ?? null, mailer = createMailer(), pages } = {}) {
+export function createApp({
+  demo = null, store = demo?.store ?? null, mailer = createMailer({ printOnly: Boolean(demo) }), github = createGitHub(), pages,
+} = {}) {
   if (demo && process.env.VERCEL) throw new Error('The demo only runs on your own computer.');
   const api = {
     demo,
     mailer,
+    github,
     // Settings still to add: only the database, which a supplied store stands in for.
     missing: () => (store || process.env.MONGODB_URI?.trim() ? [] : ['MONGODB_URI']),
     store: async () => store ?? storeFor(await database()),
@@ -29,6 +34,9 @@ export function createApp({ demo = null, store = demo?.store ?? null, mailer = c
 
   const app = express();
   app.disable('x-powered-by');
+  // Which deployment answered, so a portal left open can tell when a new version is out.
+  const build = process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA;
+  if (build) app.use('/api', (req, res, next) => { res.setHeader('X-Portal-Build', build); next(); });
   app.use('/api/auth', authRoutes(api));
   app.use('/api/portal', portalRoutes(api));
   app.use('/api/connect', connectRoutes(api));

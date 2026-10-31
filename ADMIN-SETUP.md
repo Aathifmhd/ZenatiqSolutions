@@ -6,6 +6,7 @@ The portal lives at **https://www.zenatiqsolutions.com/admin**. It has:
 - **Task boards** (To do, In progress, Review, Done) for every project
 - **Contact with Zenatiq**: an inbox for messages clients send from their own websites
 - **Clients**, **Team** (sign-in with email and password), **Payments** (owners and admins only) and an **Activity** log that can't be edited
+- Each project's **Activity** tab also lists every commit in its GitHub repository
 
 Data is stored in **MongoDB Atlas** (free plan), and **Resend** sends the emails with each new person's username and temporary password. The website and portal (`frontend/`) and their API (`backend/`, one Express app) deploy together as a single Vercel project.
 
@@ -54,6 +55,7 @@ In Vercel, open the project, then **Settings → Environment Variables**. Add th
 | `MONGODB_URI` | The connection string from step 1 |
 | `RESEND_API_KEY` | The API key from step 2 |
 | `MAIL_FROM` | Optional. Who the emails come from. `Zenatiq Solutions <portal@zenatiqsolutions.com>` if left out. |
+| `GITHUB_TOKEN` | Recommended. Lets the Activity tabs read your GitHub repositories (see [GitHub commits](#github-commits-in-the-activity-tab)). |
 | `MONGODB_DB` | Optional. The database name. `zenatiq` if left out. |
 
 Then go to **Deployments**, open the latest one and choose **⋯ → Redeploy**. New settings only reach new deployments. If you added `GOOGLE_CLIENT_ID` or `OWNER_EMAIL` earlier, delete them: the portal doesn't use them any more.
@@ -104,6 +106,24 @@ npm run member -- password you@example.com
 Each project has its own secret key. A key only reaches that project's conversations, and each project is limited to 30 client messages an hour. If a key ends up somewhere public, click **Make a new key** and paste the new code.
 
 New client messages show a red badge and a pop-up in the portal within about 12 seconds (about a minute when the tab is in the background). Turn on **Desktop alerts** in the sidebar to get a notification when the portal isn't the tab you're looking at.
+
+## GitHub commits in the Activity tab
+
+Open a project, then **Activity → GitHub commits**. You'll see every commit in the project's repository, newest first and grouped by day. Each one shows its message, author, time and a link to it on GitHub. Pick another branch at the top right, and use **Show older commits** to go back to the very first commit.
+
+To set it up, give the project its repository address: **Edit → Code repository**, for example `https://github.com/Aathifmhd/ZenatiqSolutions`.
+
+Then make a read-only GitHub token, so the portal can read private repositories. Without one, GitHub only allows 60 requests an hour, and on Vercel that limit is shared with other websites.
+
+1. On GitHub, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
+2. Name it "Zenatiq portal" and choose an expiry date. Set yourself a reminder to renew it before then.
+3. **Resource owner**: your account, or the organization that owns the repositories.
+4. **Repository access**: **All repositories**, or only the ones the portal should show.
+5. **Permissions → Repository permissions → Contents: Read-only**. GitHub adds **Metadata: Read-only** by itself.
+6. Generate the token and copy it. It starts with `github_pat_`.
+7. Add it in Vercel as `GITHUB_TOKEN`, and in your `.env` for `npm run dev`. Then redeploy.
+
+One fine-grained token only covers one owner. If your repositories belong to several accounts or organizations, make a classic token with the `repo` scope instead. It can read them all, but it can also change them, so keep it extra safe.
 
 ## 6. Cloudflare (once)
 

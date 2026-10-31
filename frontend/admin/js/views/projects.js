@@ -34,7 +34,7 @@ export async function render(ctx) {
         </div>
         <h3>${p.name}</h3>
         <p class="pcard__client">${client?.name || 'No client yet'} · ${LABELS.type[p.type]}</p>
-        ${live ? html`<a class="pcard__url" href="${live}" target="_blank" rel="noopener">${icon('external')}${prettyUrl(p.live_url)}</a>` : html`<span class="pcard__url pcard__url--none">No live link yet</span>`}
+        ${live ? html`<a class="pcard__url" href="${live}" target="_blank" rel="noopener" title="${prettyUrl(p.live_url)}">${icon('external')}<span>${prettyUrl(p.live_url)}</span></a>` : html`<span class="pcard__url pcard__url--none">No live link yet</span>`}
         <div class="pcard__foot">
           <span class="avs">${team.slice(0, 4).map((m) => avatar(m, 'av--sm'))}${team.length ? '' : html`<span class="muted">No team yet</span>`}</span>
           <span class="pcard__counts">

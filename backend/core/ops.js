@@ -8,6 +8,7 @@
 // countDocuments. Filters use plain values, $in, $ne, $lt, $lte, $gt and $gte.
 import { savePassword, temporaryPassword } from '../passwords.js';
 import { passwordEmail } from '../mail.js';
+import { repoFrom } from '../github.js';
 
 export class OpError extends Error {
   constructor(message, code = 'invalid', status = 400, extra = undefined) {
@@ -158,7 +159,8 @@ const PROJECT_DETAILS = ['name', 'client_id', 'type', 'live_url', 'admin_url', '
 
 // --- The admin portal ------------------------------------------------------------------------------
 // mailer sends one email (see mail.js); adding someone or sending a new password uses it.
-export function createPortal(store, { mailer } = {}) {
+// github reads commit histories (see github.js) for the projects' Activity tabs.
+export function createPortal(store, { mailer, github } = {}) {
   const col = (name) => store.col(name);
   const find = (name, filter = {}, options = {}) => col(name).find(filter, options);
   const one = (name, filter) => col(name).findOne(filter);
@@ -580,6 +582,23 @@ export function createPortal(store, { mailer } = {}) {
       if (before != null) filter.id = { $lt: idOf(before) };
       const max = Math.min(Math.max(Math.floor(Number(limit)) || 50, 1), 100);
       return find('activity', filter, { sort: { id: -1 }, limit: max });
+    },
+
+    // --- GitHub ---
+    // The commits of the project's GitHub repository, newest first, a page at a time.
+    // branch: a branch name, or nothing for the repository's default branch.
+    async 'github.commits'(me, { projectId, branch, page = 1 }) {
+      const project = await need('projects', projectId, 'That project');
+      const repo = repoFrom(project.repo_url);
+      if (!repo) {
+        throw new OpError(project.repo_url
+          ? "Commits can only be shown for GitHub repositories, and this project's code repository isn't on github.com."
+          : 'This project has no GitHub repository yet. Add its address under Edit → Code repository.', 'no_repo', 400);
+      }
+      if (!github) throw new OpError("GitHub isn't connected here.", 'github_off', 503);
+      const n = Number(page);
+      if (!Number.isInteger(n) || n < 1 || n > 2000) throw new OpError('Page must be a whole number.');
+      return github.commits(repo, { branch: text(branch, 250, 'Branch'), page: n });
     },
 
     // What changed recently, for live updates. The window overlaps the last check by 15 seconds

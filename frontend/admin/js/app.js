@@ -33,6 +33,14 @@ const NAV = [
 let me;
 const current = { token: null, mod: null, ctx: null };
 
+// A new version went live while this page was open: offer a reload, once.
+window.addEventListener('portal-update', () => {
+  const bar = Object.assign(document.createElement('div'), { className: 'update-bar', role: 'status' });
+  bar.innerHTML = String(html`<span>The portal has been updated.</span><button class="btn btn--sm" type="button">Reload</button>`);
+  bar.querySelector('button').addEventListener('click', () => location.reload());
+  document.body.append(bar);
+}, { once: true });
+
 start().catch((err) => {
   console.error(err);
   root.innerHTML = String(html`<div class="auth"><div class="auth__card"><h1>The portal couldn't start</h1>

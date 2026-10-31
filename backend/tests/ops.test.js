@@ -8,6 +8,9 @@ import { MemoryStore } from '../core/memory.js';
 // Emails with temporary passwords are kept here instead of being sent.
 const outbox = [];
 const mailer = async (email) => { outbox.push(email); return { sent: true }; };
+// GitHub's part: records which repository and page were asked for.
+const asked = [];
+const github = { commits: async (repo, options) => { asked.push({ repo, options }); return { repo, commits: [] }; } };
 
 describe('rules, in memory', () => rules(() => new MemoryStore({})));
 
@@ -28,7 +31,7 @@ function rules(makeStore) {
   let store, portal, connect;
   before(async () => {
     store = await makeStore();
-    portal = createPortal(store, { mailer });
+    portal = createPortal(store, { mailer, github });
     connect = createConnect(store);
   });
   const col = (n) => store.col(n);
@@ -129,6 +132,24 @@ function rules(makeStore) {
     await portal.run(member, 'projects.unassign', { projectId: project.id, memberId: member.id });
     assert.equal(await lastSummary(), 'Took Mo Member off Veloura store');
     await portal.run(member, 'projects.assign', { projectId: project.id, memberId: member.id });
+  });
+  test("commits come from the project's own GitHub repository", async () => {
+    await assert.rejects(portal.run(member, 'github.commits', { projectId: project.id }), { code: 'no_repo', message: /no GitHub repository yet/ });
+    await portal.run(member, 'projects.update', { id: project.id, patch: { repo_url: 'https://gitlab.com/veloura/store' } });
+    await assert.rejects(portal.run(member, 'github.commits', { projectId: project.id }), { code: 'no_repo', message: /isn't on github\.com/ });
+    await portal.run(member, 'projects.update', { id: project.id, patch: { repo_url: 'https://github.com/veloura/store.git' } });
+    await portal.run(member, 'github.commits', { projectId: project.id });
+    await portal.run(member, 'github.commits', { projectId: project.id, branch: 'dev', page: 2 });
+    assert.deepEqual(asked.slice(-2), [
+      { repo: { owner: 'veloura', name: 'store' }, options: { branch: null, page: 1 } },
+      { repo: { owner: 'veloura', name: 'store' }, options: { branch: 'dev', page: 2 } },
+    ]);
+  });
+  test('commit requests are checked', async () => {
+    await assert.rejects(portal.run(member, 'github.commits', { projectId: { $ne: null } }), { code: 'not_found' });
+    await assert.rejects(portal.run(member, 'github.commits', { projectId: project.id, page: 'abc' }), { message: /whole number/ });
+    await assert.rejects(portal.run(member, 'github.commits', { projectId: project.id, page: 0 }), { message: /whole number/ });
+    await assert.rejects(portal.run(member, 'github.commits', { projectId: project.id, branch: { $gt: '' } }), { message: /Branch must be text/ });
   });
   test('member cannot delete clients or projects', async () => {
     await assert.rejects(portal.run(member, 'clients.remove', { id: client.id }), { code: 'forbidden' });

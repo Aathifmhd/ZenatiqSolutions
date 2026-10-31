@@ -20,7 +20,7 @@ export function portalRoutes(api) {
     if (api.demo && op === 'demo.reset') return send(res, 200, { data: api.demo.reset() ?? null });
     if (api.demo && op === 'demo.clientMessage') return send(res, 200, { data: await api.demo.clientMessage(args) });
 
-    const data = await createPortal(store, { mailer: api.mailer }).run(me, op, args);
+    const data = await createPortal(store, { mailer: api.mailer, github: api.github }).run(me, op, args);
     send(res, 200, { data: data ?? null });
   });
 

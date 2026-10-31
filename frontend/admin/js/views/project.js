@@ -1,6 +1,6 @@
 // One project: overview, task board, client messages, payments, activity and the widget code.
 import {
-  html, icon, mount, pill, avatar, options, LABELS, TYPE_ICON, fmtDate, fmtShort, isOverdue, money,
+  html, icon, mount, pill, avatar, options, LABELS, TYPE_ICON, fmtDate, fmtShort, fmtTime, ago, isOverdue, money,
   safeUrl, prettyUrl, emptyState, toast, confirmDialog, copyText, friendly, modal, val,
 } from '../lib.js';
 import {
@@ -63,6 +63,122 @@ export async function render(ctx) {
   });
 
   await TABS[active](ctx, el.querySelector('[data-tab]'), project, { sub, threads });
+}
+
+// What the team did in the portal on this project, newest first.
+async function portalActivity(ctx, box, project) {
+  const { db, store } = ctx;
+  let items = await db.activity.list({ projectId: project.id, limit: 40 });
+  const draw = (more) => mount(box, html`
+    <section class="card">
+      ${items.length ? html`<ul class="acts">${items.map((a) => activityRow(a, store, { showProject: false }))}</ul>` : emptyState('No activity yet')}
+      ${more ? html`<button class="btn btn--ghost btn--sm load-more" type="button" data-act="more">Show older</button>` : ''}
+    </section>`, {
+    more: async () => {
+      const older = await db.activity.list({ projectId: project.id, limit: 40, before: items.at(-1).id });
+      items = items.concat(older);
+      draw(older.length === 40);
+    },
+  });
+  draw(items.length === 40);
+}
+
+// Every commit in the project's GitHub repository, newest first and grouped by day, from the
+// latest one back to the very first ("Show older commits" loads the next 50).
+async function commitLog(ctx, box, project) {
+  const { db } = ctx;
+  if (!project.repo_url) {
+    return mount(box, html`<section class="card">${emptyState('No GitHub repository yet',
+      "Add the project's repository address and every commit shows up here, newest first.",
+      html`<button class="btn btn--primary" type="button" data-act="edit">${icon('a-edit')}Add the repository</button>`)}</section>`, {
+      edit: async () => { if (await projectModal(ctx, project)) render(ctx); },
+    });
+  }
+
+  let state;
+  const load = async (branch = null) => {
+    box.innerHTML = '<section class="card"><div class="loading"><span class="spinner"></span></div></section>';
+    try {
+      const first = await db.github.commits(project.id, { branch });
+      state = { first, commits: first.commits, nextPage: first.nextPage };
+    } catch (err) {
+      state = { error: friendly(err), branch };
+    }
+    if (ctx.isCurrent()) draw();
+  };
+
+  const draw = () => {
+    if (state.error) {
+      return mount(box, html`<section class="card">${emptyState("The commits couldn't load", state.error,
+        html`<button class="btn btn--ghost" type="button" data-act="retry">Try again</button>`)}</section>`, {
+        retry: () => load(state.branch),
+      });
+    }
+    const { first, commits, nextPage } = state;
+    const { repo, branch, branches, total } = first;
+    mount(box, html`
+      <section class="card commits">
+        <header class="commits__head">
+          <a class="commits__repo" href="${repo.url}" target="_blank" rel="noopener">${icon('a-commit')}<b>${repo.owner}/${repo.name}</b>${icon('external')}</a>
+          ${repo.private ? html`<span class="pill pill--off">Private</span>` : ''}
+          <span class="commits__count">${total.toLocaleString('en-US')} commit${total === 1 ? '' : 's'} on <b>${branch}</b></span>
+          ${branches.length > 1 ? html`<label class="mini commits__branch">${icon('a-branch')}<span class="sr-only">Branch</span>
+            <select class="input input--sm" data-change="branch">${branches.map((b) => html`<option value="${b}" ${b === branch ? 'selected' : ''}>${b}</option>`)}</select></label>` : ''}
+        </header>
+        ${commits.length ? byDay(commits).map(([day, list]) => html`
+          <h3 class="commits__day">${day}</h3>
+          <ol class="commits__list">${list.map(commitRow)}</ol>`) : emptyState('No commits yet', `The ${branch} branch has no commits.`)}
+        ${nextPage ? html`<button class="btn btn--ghost btn--sm load-more" type="button" data-act="more">Show older commits</button>`
+          : commits.length ? html`<p class="commits__end">That's every commit on ${branch}, back to the first one.</p>` : ''}
+      </section>`, {
+      branch: (select) => load(select.value),
+      more: async (button) => {
+        button.disabled = true;
+        button.textContent = 'Loading older commits…';
+        try {
+          const older = await db.github.commits(project.id, { branch, page: nextPage });
+          Object.assign(state, { commits: commits.concat(older.commits), nextPage: older.nextPage });
+          if (ctx.isCurrent()) draw();
+        } catch (err) {
+          toast(friendly(err), 'error');
+          button.disabled = false;
+          button.textContent = 'Show older commits';
+        }
+      },
+    });
+  };
+  await load();
+}
+
+// [["Sat 31 Oct 2026", [commits…]], …] in the order the commits came.
+function byDay(commits) {
+  const days = new Map();
+  for (const c of commits) {
+    const day = c.date ? new Date(c.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'Undated';
+    if (!days.has(day)) days.set(day, []);
+    days.get(day).push(c);
+  }
+  return [...days];
+}
+
+function commitRow(c) {
+  const [title, ...rest] = c.message.split('\n');
+  const body = rest.join('\n').trim();
+  let face = null;
+  try {
+    const url = new URL(c.avatar);
+    url.searchParams.set('s', '56');
+    face = url.protocol === 'https:' ? url.href : null;
+  } catch { /* no GitHub account linked to this commit */ }
+  return html`<li class="commit">
+    ${face ? html`<img class="av av--sm commit__av" src="${face}" alt="" width="28" height="28" loading="lazy">` : avatar({ full_name: c.name, email: c.name }, 'av--sm')}
+    <div class="commit__main">
+      <a class="commit__title" href="${c.url}" target="_blank" rel="noopener">${title || '(no message)'}</a>
+      ${body ? html`<details class="commit__more"><summary>Full message</summary><pre>${body}</pre></details>` : ''}
+      <p class="commit__meta"><b>${c.login || c.name}</b> committed ${c.date ? html`<time datetime="${c.date}" title="${fmtTime(c.date)}">${ago(c.date)}</time>` : ''}</p>
+    </div>
+    <a class="commit__sha" href="${c.url}" target="_blank" rel="noopener" title="${c.sha}">${c.sha.slice(0, 7)}</a>
+  </li>`;
 }
 
 export function onLive(ctx, table, payload) {
@@ -352,22 +468,16 @@ const TABS = {
     });
   },
 
-  // --- Activity -----------------------------------------------------------------------
-  async activity(ctx, panel, project) {
-    const { db, store } = ctx;
-    let items = await db.activity.list({ projectId: project.id, limit: 40 });
-    const draw = (more) => mount(panel, html`
-      <section class="card">
-        ${items.length ? html`<ul class="acts">${items.map((a) => activityRow(a, store, { showProject: false }))}</ul>` : emptyState('No activity yet')}
-        ${more ? html`<button class="btn btn--ghost btn--sm load-more" type="button" data-act="more">Show older</button>` : ''}
-      </section>`, {
-      more: async () => {
-        const older = await db.activity.list({ projectId: project.id, limit: 40, before: items.at(-1).id });
-        items = items.concat(older);
-        draw(older.length === 40);
-      },
-    });
-    draw(items.length === 40);
+  // --- Activity: the commits in the project's GitHub repository, and the portal's own log ---
+  async activity(ctx, panel, project, { sub }) {
+    const view = sub === 'portal' ? 'portal' : 'commits';
+    const link = (key, label, symbol) => html`<a href="#/projects/${project.id}/activity/${key}" class="${view === key ? 'is-on' : ''}"
+      aria-current="${view === key ? 'page' : 'false'}">${icon(symbol)}${label}</a>`;
+    mount(panel, html`
+      <nav class="seg seg--tabs" aria-label="Activity">${link('commits', 'GitHub commits', 'a-commit')}${link('portal', 'Portal activity', 'clock')}</nav>
+      <div data-view></div>`);
+    const box = panel.querySelector('[data-view]');
+    return view === 'portal' ? portalActivity(ctx, box, project) : commitLog(ctx, box, project);
   },
 
   // --- Widget code ---------------------------------------------------------------------
