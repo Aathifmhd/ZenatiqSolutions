@@ -16,6 +16,7 @@ const VIEWS = {
   clients: () => import('./views/clients.js'),
   team: () => import('./views/team.js'),
   payments: () => import('./views/payments.js'),
+  renewals: () => import('./views/renewals.js'),
   activity: () => import('./views/activity.js'),
 };
 
@@ -27,6 +28,7 @@ const NAV = [
   { route: 'clients', href: '#/clients', label: 'Clients', icon: 'a-building' },
   { route: 'team', href: '#/team', label: 'Team', icon: 'a-users' },
   { route: 'payments', href: '#/payments', label: 'Payments', icon: 'a-wallet', adminOnly: true },
+  { route: 'renewals', href: '#/renewals', label: 'Renewals', icon: 'a-renew', adminOnly: true },
   { route: 'activity', href: '#/activity', label: 'Activity', icon: 'clock' },
 ];
 
@@ -218,7 +220,7 @@ async function route() {
   let name = parts[0] || 'dashboard';
   let params = parts.slice(1);
   if (name === 'projects' && params[0] && params[0] !== 'new') name = 'project';
-  if (!VIEWS[name] || (name === 'payments' && !isAdmin())) { name = 'dashboard'; params = []; }
+  if (!VIEWS[name] || (['payments', 'renewals'].includes(name) && !isAdmin())) { name = 'dashboard'; params = []; }
 
   const navName = name === 'project' ? 'projects' : name;
   root.querySelectorAll('.side__nav a').forEach((a) => a.classList.toggle('is-active', a.dataset.route === navName));

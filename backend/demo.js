@@ -114,7 +114,28 @@ function seed(ownerId, passwordHash) {
 
   const credentials = team.map((m) => ({ member_id: m.id, password_hash: passwordHash, temporary: false, expires_at: null, updated_at: ago(30) }));
 
-  return { team_members: team, credentials, clients, projects, project_members, threads, messages, tasks, project_finances, payments, activity, changes: [] };
+  // Yearly subscriptions in every state: due soon, in its grace days, paid up, and expired.
+  const subscription = (p, pkg, price, endsIn, email, extra = {}) => ({
+    id: uuid(), project_id: p.id, package: pkg, price, currency: 'LKR', starts_on: dateIn(endsIn - 364), ends_on: dateIn(endsIn),
+    grace_days: 14, email, notes: null, cancelled: false, reminders: [], last_reminded_at: null, created_at: ago(400), updated_at: ago(30), ...extra,
+  });
+  const subscriptions = [
+    subscription(pCargo, 'POS Business', 25000, 12, 'cargo@example.com', { notes: '2 tills, SMS bills included' }),
+    subscription(pRegal, 'POS Pro', 60000, -5, 'regal@example.com', { last_reminded_at: ago(4) }),
+    subscription(pGloss, 'Website Care', 12000, 200, 'gloss@example.com'),
+    subscription(pYyr, 'Website Care', 12000, -40, 'yyr@example.com'),
+  ];
+  const glossRenewal = { ...payment(pGloss, 12000, 165, 'bank_transfer', 'Renewal'), kind: 'renewal', note: `Yearly renewal: Website Care, paid until ${dateIn(200)}` };
+  payments.push(glossRenewal);
+  const renewals = [{
+    id: uuid(), project_id: pGloss.id, subscription_id: subscriptions[2].id, payment_id: glossRenewal.id, years: 1, amount: 12000, currency: 'LKR',
+    paid_on: glossRenewal.paid_on, from_ends_on: dateIn(200 - 365), to_ends_on: dateIn(200), recorded_by: aathif.id, created_at: ago(165),
+  }];
+
+  return {
+    team_members: team, credentials, clients, projects, project_members, threads, messages, tasks, project_finances, payments, activity,
+    subscriptions, renewals, changes: [],
+  };
 }
 
 export async function createDemo() {

@@ -12,6 +12,7 @@ import { createGitHub } from './github.js';
 import { authRoutes } from './routes/auth.js';
 import { portalRoutes } from './routes/portal.js';
 import { connectRoutes } from './routes/connect.js';
+import { cronRoutes } from './routes/cron.js';
 
 // The live site passes no options. The local server and the tests use:
 //   demo:   sample data in memory, with sample accounts (backend/demo.js)
@@ -40,6 +41,7 @@ export function createApp({
   app.use('/api/auth', authRoutes(api));
   app.use('/api/portal', portalRoutes(api));
   app.use('/api/connect', connectRoutes(api));
+  app.use('/api/cron', cronRoutes(api));
   app.use('/api', (req, res) => send(res, 404, { error: { code: 'not_found', message: 'There is no API at this address.' } }));
 
   if (pages) {

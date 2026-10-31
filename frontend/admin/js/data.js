@@ -104,6 +104,18 @@ export const money = {
   removePayment: (id) => call('money.removePayment', { id }),
 };
 
+// Yearly subscriptions and renewals (owners and admins).
+export const subscriptions = {
+  list: () => call('subscriptions.list'),
+  get: (projectId) => call('subscriptions.get', { projectId }),
+  set: (projectId, row) => call('subscriptions.set', { projectId, row }),
+  renew: (projectId, { years, amount, paid_on, method, reference }) => call('subscriptions.renew', { projectId, years, amount, paid_on, method, reference }),
+  cancel: (projectId, cancelled) => call('subscriptions.cancel', { projectId, cancelled }),
+  remove: (projectId) => call('subscriptions.remove', { projectId }),
+  remind: (projectId) => call('subscriptions.remind', { projectId }),
+  runReminders: () => call('subscriptions.runReminders'),
+};
+
 export const activity = {
   list: ({ projectId, limit = 50, before } = {}) => call('activity.list', { projectId, limit, before }),
 };

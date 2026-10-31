@@ -93,6 +93,13 @@ select.input--sm{padding-right:30px}
 .pill.is-high{background:#fde9dc;color:#b54a00}
 .pill.is-admin{background:var(--red);color:#fff}
 .pill--off{background:#ebebeb;color:#555}
+/* Yearly subscriptions, and renewal payments */
+.pill.is-active{background:#e2f5e9;color:var(--ok)}
+.pill.is-ending{background:#fdf1dc;color:var(--warn)}
+.pill.is-grace{background:#fde9dc;color:#b54a00}
+.pill.is-expired{background:var(--red-soft);color:var(--red-deep)}
+.pill.is-cancelled{background:#ebebeb;color:#555}
+.pill.is-renewal{background:#e6effc;color:var(--info)}
 .av{display:inline-grid;place-items:center;flex:none;width:36px;height:36px;border-radius:50%;color:#fff;font:700 .8rem/1 var(--sans);letter-spacing:.02em}
 .av--sm{width:28px;height:28px;font-size:.7rem}
 .av--lg{width:52px;height:52px;font-size:1.05rem}
@@ -335,7 +342,27 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
 .convo__reply-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 
 /* ---------- money ---------- */
-.money{display:grid;gap:16px}
+.money{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+/* The yearly subscription card at the top of a project's Payments tab */
+.subcard{display:grid;gap:14px}
+.subcard .card__head{margin-bottom:0}
+.subcard__facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 24px}
+.subcard__facts span{display:block;color:var(--muted);font-size:.84rem}
+.subcard__facts b{display:block;overflow-wrap:anywhere;font:800 1.1rem/1.3 var(--display);letter-spacing:-.01em}
+.subcard__facts small{display:block;margin-top:2px;color:var(--muted);font-size:.8rem}
+.subcard .is-due{color:var(--red-deep)}
+.subcard__actions{display:flex;flex-wrap:wrap;gap:8px;padding-top:14px;border-top:1px solid var(--line)}
+.subcard__history summary{width:max-content;cursor:pointer;color:var(--muted);font-size:.86rem;font-weight:600}
+.subcard__history .plist{margin-top:8px}
+.subcard__empty{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px}
+.subcard__empty h2{margin-bottom:4px}
+.subcard__empty p{max-width:60ch}
+.renew-preview{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;background:var(--paper);font-size:.9rem}
+.renew-preview .i{width:16px;height:16px;color:var(--muted)}
+.renewals small.is-due{color:var(--red-deep);font-weight:600}
+.renewals__job{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.renewals__job p{display:flex;align-items:flex-start;gap:8px;max-width:70ch}
+.renewals__job .i{flex:none;width:15px;height:15px;margin-top:3px}
 .money__summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:center;gap:16px 24px}
 .money__summary > div:not(.money__bar):not(.money__actions) span{display:block;color:var(--muted);font-size:.84rem}
 .money__summary b{font:800 1.45rem/1.2 var(--display);letter-spacing:-.02em}
@@ -478,6 +505,9 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
   .mtop .badge{margin-left:auto}
   .view{padding:20px 16px 48px}
   .demo-bar{position:static}
+}
+@media (max-width:900px){
+  .subcard__facts{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:640px){
   .stats{grid-template-columns:1fr 1fr;gap:10px}

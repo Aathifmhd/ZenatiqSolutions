@@ -7,6 +7,7 @@ The portal lives at **https://www.zenatiqsolutions.com/admin**. It has:
 - **Contact with Zenatiq**: an inbox for messages clients send from their own websites
 - **Clients**, **Team** (sign-in with email and password), **Payments** (owners and admins only) and an **Activity** log that can't be edited
 - Each project's **Activity** tab also lists every commit in its GitHub repository
+- **Renewals** for yearly packages, with reminder emails to clients before each one is due
 
 Data is stored in **MongoDB Atlas** (free plan), and **Resend** sends the emails with each new person's username and temporary password. The website and portal (`frontend/`) and their API (`backend/`, one Express app) deploy together as a single Vercel project.
 
@@ -56,6 +57,8 @@ In Vercel, open the project, then **Settings → Environment Variables**. Add th
 | `RESEND_API_KEY` | The API key from step 2 |
 | `MAIL_FROM` | Optional. Who the emails come from. `Zenatiq Solutions <portal@zenatiqsolutions.com>` if left out. |
 | `GITHUB_TOKEN` | Recommended. Lets the Activity tabs read your GitHub repositories (see [GitHub commits](#github-commits-in-the-activity-tab)). |
+| `CRON_SECRET` | Needed for automatic renewal reminders. Any long random text (see [Yearly subscriptions](#yearly-subscriptions-and-renewals)). |
+| `MAIL_REPLY_TO` | Optional. An inbox you read, such as `hello@zenatiqsolutions.com`. Clients' replies to reminder emails go there. |
 | `MONGODB_DB` | Optional. The database name. `zenatiq` if left out. |
 
 Then go to **Deployments**, open the latest one and choose **⋯ → Redeploy**. New settings only reach new deployments. If you added `GOOGLE_CLIENT_ID` or `OWNER_EMAIL` earlier, delete them: the portal doesn't use them any more.
@@ -106,6 +109,45 @@ npm run member -- password you@example.com
 Each project has its own secret key. A key only reaches that project's conversations, and each project is limited to 30 client messages an hour. If a key ends up somewhere public, click **Make a new key** and paste the new code.
 
 New client messages show a red badge and a pop-up in the portal within about 12 seconds (about a minute when the tab is in the background). Turn on **Desktop alerts** in the sidebar to get a notification when the portal isn't the tab you're looking at.
+
+## Yearly subscriptions and renewals
+
+**Set one up** for a client who pays every year to keep using a system, such as a POS package.
+
+1. Open the project, then the **Payments** tab.
+2. Choose **Set up a yearly subscription**.
+3. Enter the package name, the yearly price, the start date and the "paid until" date (the last day that's paid for). By default it's one year from today.
+4. Optionally, add a reminder email if the client's own email shouldn't get them.
+
+**Track them on the Renewals page** (owners and admins only). Every subscription has a status:
+
+| Status | Meaning |
+|---|---|
+| **Active** | Paid for more than 30 days ahead. |
+| **Ending soon** | 30 days or less to go. |
+| **In grace period** | Ended, but still within its grace days (14 by default) to renew. |
+| **Expired** | The grace days have run out. |
+| **Cancelled** | The client isn't renewing, so no more reminders go out. |
+
+The dashboard shows how many are due in the next 30 days.
+
+**When a client pays, choose Record renewal.**
+- It records the payment, tagged as a renewal, and moves "paid until" on by the years paid for.
+- Paid within the grace days, the new year carries on from the old date, so the client loses nothing. Paid later, it starts on the payment day.
+- Renewal payments count towards "Received" on the Payments page, but not towards a project's build balance.
+
+**Reminder emails to the client** go out automatically every morning at 8:00 Sri Lanka time:
+- 30, 14, 7 and 1 days before the "paid until" date;
+- the day after it ends;
+- when the grace days run out.
+
+Each reminder goes once. Nobody gets an email about a subscription that ran out long ago. To send one by hand, use **Email a reminder now** on the project's Payments tab.
+
+To turn the automatic reminders on:
+1. In Vercel, add `CRON_SECRET` with any long random text, then redeploy. Vercel's daily job (`crons` in `vercel.json`) sends it, so nobody else can trigger the reminders.
+2. Optionally, add `MAIL_REPLY_TO`, an inbox you read, so clients can reply to reminders. They always include your WhatsApp number.
+
+The Renewals page shows when the reminders last went out. **Send today's reminders now** runs the same job straight away.
 
 ## GitHub commits in the Activity tab
 

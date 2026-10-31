@@ -5,6 +5,7 @@ import { TEMPORARY_DAYS } from './passwords.js';
 
 const FROM = 'Zenatiq Solutions <portal@zenatiqsolutions.com>';
 const PORTAL = 'https://www.zenatiqsolutions.com/admin';
+const WHATSAPP = '+94 75 811 2170';
 
 // Returns a function that sends one email: { to, subject, text, html } -> { sent }.
 // sent is false when the email was only printed. printOnly is for the demo, which never sends
@@ -22,7 +23,10 @@ export function createMailer({ printOnly = false } = {}) {
       res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: process.env.MAIL_FROM?.trim() || FROM, to: [to], subject, text, html }),
+        body: JSON.stringify({
+          from: process.env.MAIL_FROM?.trim() || FROM, to: [to], subject, text, html,
+          reply_to: process.env.MAIL_REPLY_TO?.trim() || undefined,
+        }),
       });
     } catch {
       throw new HttpError("The email couldn't be sent: Resend could not be reached.", 'email_failed', 502);
@@ -36,6 +40,8 @@ export function createMailer({ printOnly = false } = {}) {
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const longDate = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+const price = (n, currency) => `${currency} ${Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 
 // The email with someone's username and temporary password: a welcome for new people, or a
 // replacement when an owner or admin sends a new one.
@@ -62,4 +68,36 @@ export function passwordEmail({ member, password, by, welcome }) {
 <p>Zenatiq Solutions</p>
 </div>`;
   return { to: member.email, subject, text, html };
+}
+
+// A renewal reminder to a client. stage: "before" the paid-until date, the day after it "ended",
+// or "expired" once the grace days have run out. left: days from today to the paid-until date.
+export function renewalEmail({ sub, project, client, to, stage, left }) {
+  const until = longDate(sub.ends_on);
+  const what = `${sub.package} for ${project.name}`;
+  const yearly = price(sub.price, sub.currency);
+  const graceLeft = Math.max(sub.grace_days + left + 1, 0);
+  const when = left === 0 ? 'today' : left === 1 ? 'tomorrow' : `in ${left} days`;
+  const [subject, ...lines] = {
+    before: [`Renewal reminder: ${project.name} is paid until ${until}`,
+      `Your ${what} is paid until ${until}, which is ${when}.`,
+      `To keep it running without a break, please renew it for another year (${yearly}).`],
+    ended: [`Your ${project.name} subscription has ended`,
+      `Your ${what} was paid until ${until}.`,
+      `It keeps working for ${graceLeft} more day${graceLeft === 1 ? '' : 's'}. Please renew it (${yearly} a year) before then to avoid any interruption.`],
+    expired: [`Your ${project.name} subscription has expired`,
+      `Your ${what} was paid until ${until}, and the extra days to renew have now run out.`,
+      `Please renew it (${yearly} a year) to keep using it.`],
+  }[stage];
+  const howTo = `To renew, message us on WhatsApp at ${WHATSAPP}${process.env.MAIL_REPLY_TO?.trim() ? ' or reply to this email' : ''}.`;
+  const hello = `Hi ${client?.contact_name || client?.name || project.name},`;
+  const text = [hello, '', ...lines, '', howTo, '', 'Thank you,', 'Zenatiq Solutions'].join('\n');
+  const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1f;max-width:520px">
+<p>${esc(hello)}</p>
+${lines.map((line) => `<p>${esc(line)}</p>`).join('\n')}
+<p style="margin:18px 0"><a href="https://wa.me/${WHATSAPP.replace(/\D/g, '')}" style="display:inline-block;padding:11px 20px;border-radius:999px;background:#e10600;color:#fff;font-weight:bold;text-decoration:none">Renew on WhatsApp</a></p>
+<p style="color:#666">${esc(howTo)}</p>
+<p>Thank you,<br>Zenatiq Solutions</p>
+</div>`;
+  return { to, subject, text, html };
 }

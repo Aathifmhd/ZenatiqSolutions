@@ -51,7 +51,11 @@ export const LABELS = {
   thread: { open: 'Open', in_progress: 'In progress', resolved: 'Resolved' },
   role: { owner: 'Owner', admin: 'Admin', member: 'Member' },
   method: { bank_transfer: 'Bank transfer', cash: 'Cash', card: 'Card', cheque: 'Cheque', online: 'Online', other: 'Other' },
+  sub: { active: 'Active', ending: 'Ending soon', grace: 'In grace period', expired: 'Expired', cancelled: 'Cancelled' },
 };
+// Payments that count towards a project's build quote. Yearly renewals are income, but not part
+// of the balance still owed for the build.
+export const quotePayments = (payments) => payments.filter((p) => p.kind !== 'renewal');
 export const ACTIVE_STATUSES = ['planning', 'in_progress', 'review'];
 export const TYPE_ICON = { website: 'i-web', online_shop: 'i-shop', pos: 'i-pos', mobile_app: 'i-app', ui_ux: 'i-ux', other: 'a-folder' };
 

@@ -7,8 +7,9 @@
 // findOne, insertOne, updateOne(filter, { $set }, { upsert }), updateMany, deleteOne, deleteMany and
 // countDocuments. Filters use plain values, $in, $ne, $lt, $lte, $gt and $gte.
 import { savePassword, temporaryPassword } from '../passwords.js';
-import { passwordEmail } from '../mail.js';
+import { passwordEmail, renewalEmail } from '../mail.js';
 import { repoFrom } from '../github.js';
+import { today, addYears, periodEnd, daysBetween, statusOf, dueReminder, withStatus } from './renewals.js';
 
 export class OpError extends Error {
   constructor(message, code = 'invalid', status = 400, extra = undefined) {
@@ -44,6 +45,12 @@ const LABEL = {
 const label = (value) => LABEL[value] ?? value ?? '';
 const money = (amount, currency) =>
   `${currency || 'LKR'} ${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtDay = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const reminderSays = (stage, left) => {
+  if (stage === 'ended') return 'it has ended';
+  if (stage === 'expired') return 'it has expired';
+  return left === 0 ? 'it ends today' : left === 1 ? 'it ends tomorrow' : `it ends in ${left} days`;
+};
 
 // --- Ids and time ------------------------------------------------------------------------
 const now = () => new Date().toISOString();
@@ -175,6 +182,48 @@ export function createPortal(store, { mailer, github } = {}) {
     const { sent } = await mailer(passwordEmail({ member, password, by: me.id ? me.full_name : null, welcome }));
     await savePassword(store, member.id, password, { temporary: true });
     return { emailed: sent };
+  }
+
+  // Emails the client a renewal reminder and notes it; `key` marks a scheduled reminder as sent.
+  async function remindClient(sub, project, stage, left, me, key = null) {
+    const client = project.client_id ? await one('clients', { id: project.client_id }) : null;
+    const to = sub.email || client?.email;
+    if (!to) throw new OpError(`${project.name} has no email for reminders. Add one to the subscription or to the client.`, 'no_email', 400);
+    if (!mailer) throw new OpError("Email isn't set up, so the reminder can't be sent.", 'email_not_configured', 503);
+    const { sent } = await mailer(renewalEmail({ sub, project, client, to, stage, left }));
+    await col('subscriptions').updateOne({ id: sub.id }, {
+      $set: { ...(key ? { reminders: [...(sub.reminders || []).slice(-19), key] } : {}), last_reminded_at: now() },
+    });
+    await log(me, project.id, 'subscription.reminded', `Emailed ${to} a renewal reminder for ${project.name}: ${reminderSays(stage, left)}`, { adminOnly: true });
+    return { to, emailed: sent };
+  }
+
+  // Every renewal reminder due today (see renewals.js). Each one goes once, so running this
+  // again on the same day sends nothing new.
+  async function sendDueReminders(me = null) {
+    const day = today();
+    const result = { day, sent: [], failed: [] };
+    for (const sub of await find('subscriptions', { cancelled: { $ne: true } })) {
+      const due = dueReminder(sub, day);
+      const project = due && (await one('projects', { id: sub.project_id }));
+      if (!project) continue;
+      try {
+        const { to } = await remindClient(sub, project, due.stage, due.left, me, due.key);
+        result.sent.push({ project: project.name, to, stage: due.stage });
+      } catch (err) {
+        result.failed.push({ project: project.name, problem: err.message });
+      }
+    }
+    await col('jobs').updateOne({ id: 'renewal-reminders' }, {
+      $set: { last_run_at: now(), last_day: day, sent: result.sent.length, failed: result.failed.length },
+    }, { upsert: true });
+    return result;
+  }
+  async function subscriptionOf(projectId) {
+    const project = await need('projects', projectId, 'That project');
+    const sub = await one('subscriptions', { project_id: project.id });
+    if (!sub) throw missing('That subscription');
+    return { project, sub };
   }
 
   async function need(name, id, what) {
@@ -383,7 +432,7 @@ export function createPortal(store, { mailer, github } = {}) {
       const old = await need('projects', id, 'That project');
       await col('projects').deleteOne({ id: old.id });
       await Promise.all([
-        ...['project_members', 'threads', 'messages', 'tasks', 'project_finances', 'payments']
+        ...['project_members', 'threads', 'messages', 'tasks', 'project_finances', 'payments', 'subscriptions', 'renewals']
           .map((name) => col(name).deleteMany({ project_id: old.id })),
         col('activity').updateMany({ project_id: old.id }, { $set: { project_id: null } }),
       ]);
@@ -574,6 +623,114 @@ export function createPortal(store, { mailer, github } = {}) {
       return null;
     },
 
+    // --- Yearly subscriptions (owners and admins) ---
+    // Every subscription with its status, and when the daily reminder job last ran.
+    async 'subscriptions.list'(me) {
+      needAdmin(me);
+      const day = today();
+      const [subs, job] = await Promise.all([find('subscriptions'), one('jobs', { id: 'renewal-reminders' })]);
+      return { today: day, subscriptions: subs.map((s) => withStatus(s, day)), remindersRanAt: job?.last_run_at ?? null };
+    },
+    // One project's subscription (or null) and its renewals, newest first.
+    async 'subscriptions.get'(me, { projectId }) {
+      needAdmin(me);
+      const project = await need('projects', projectId, 'That project');
+      const sub = await one('subscriptions', { project_id: project.id });
+      const renewals = sub ? await find('renewals', { project_id: project.id }, { sort: { created_at: -1 } }) : [];
+      return { subscription: sub ? withStatus(sub) : null, renewals };
+    },
+    // Sets up or changes a project's yearly subscription. Without dates it starts today and is
+    // paid for one year.
+    async 'subscriptions.set'(me, { projectId, row }) {
+      needAdmin(me);
+      const project = await need('projects', projectId, 'That project');
+      const r = obj(row);
+      const old = await one('subscriptions', { project_id: project.id });
+      const starts = day(r.starts_on, 'Start date') || today();
+      const ends = day(r.ends_on, 'Paid until') || periodEnd(starts);
+      if (ends < starts) throw new OpError('"Paid until" must be on or after the start date.');
+      const grace = r.grace_days == null || r.grace_days === '' ? 14 : Number(r.grace_days);
+      if (!Number.isInteger(grace) || grace < 0 || grace > 90) throw new OpError('Grace days must be a whole number from 0 to 90.');
+      const fields = {
+        package: text(r.package, 120, 'Package', { required: true }),
+        price: amount(r.price, 'Yearly price', { allowZero: true }),
+        currency: currencyOf(r.currency),
+        starts_on: starts, ends_on: ends, grace_days: grace,
+        email: r.email == null || String(r.email).trim() === '' ? null : emailOf(r.email, 'Reminder email'),
+        notes: text(r.notes, 2000, 'Notes'),
+        updated_at: now(),
+      };
+      if (old) await col('subscriptions').updateOne({ id: old.id }, { $set: fields });
+      else await col('subscriptions').insertOne({ id: uuid(), project_id: project.id, cancelled: false, reminders: [], last_reminded_at: null, created_at: now(), ...fields });
+      await log(me, project.id, old ? 'subscription.updated' : 'subscription.added', old
+        ? `Updated the yearly subscription for ${project.name}`
+        : `Set up a yearly subscription for ${project.name}: ${fields.package}, ${money(fields.price, fields.currency)} a year, paid until ${fmtDay(ends)}`,
+      { adminOnly: true });
+      return withStatus(await one('subscriptions', { project_id: project.id }));
+    },
+    // Records a renewal: a payment (marked as a renewal, so it doesn't count towards the build
+    // quote) and a paid-until date `years` later. Paid within the grace days, the new period
+    // carries on from the old one; paid after that, it starts on the payment day.
+    async 'subscriptions.renew'(me, { projectId, years = 1, amount: paid, paid_on: paidOn, method, reference }) {
+      needAdmin(me);
+      const { project, sub } = await subscriptionOf(projectId);
+      const n = Number(years);
+      if (!Number.isInteger(n) || n < 1 || n > 5) throw new OpError('Renew for 1 to 5 years.');
+      const on = day(paidOn, 'Paid on') || today();
+      const value = paid == null || paid === '' ? Math.round(sub.price * n * 100) / 100 : amount(paid, 'Amount', { allowZero: true });
+      const lapsed = daysBetween(sub.ends_on, on) > sub.grace_days;
+      const next = lapsed ? { starts_on: on, ends_on: periodEnd(on, n) } : { ends_on: addYears(sub.ends_on, n) };
+      let payment = null;
+      if (value > 0) {
+        payment = {
+          id: uuid(), project_id: project.id, amount: value, paid_on: on, method: pick(method, LISTS.method, 'Method', 'bank_transfer'),
+          reference: text(reference, 120, 'Reference'), note: `Yearly renewal: ${sub.package}, paid until ${fmtDay(next.ends_on)}`,
+          kind: 'renewal', recorded_by: me.id, created_at: now(),
+        };
+        await col('payments').insertOne(payment);
+      }
+      await col('subscriptions').updateOne({ id: sub.id }, { $set: { ...next, cancelled: false, updated_at: now() } });
+      await col('renewals').insertOne({
+        id: uuid(), project_id: project.id, subscription_id: sub.id, payment_id: payment?.id ?? null, years: n, amount: value,
+        currency: sub.currency, paid_on: on, from_ends_on: sub.ends_on, to_ends_on: next.ends_on, recorded_by: me.id, created_at: now(),
+      });
+      await log(me, project.id, 'subscription.renewed', `Renewed ${project.name} until ${fmtDay(next.ends_on)} (${money(value, sub.currency)})`, { adminOnly: true });
+      return withStatus(await one('subscriptions', { id: sub.id }));
+    },
+    // Stops reminders for a client who isn't renewing, or starts them again.
+    async 'subscriptions.cancel'(me, { projectId, cancelled = true }) {
+      needAdmin(me);
+      const { project, sub } = await subscriptionOf(projectId);
+      const value = flag(cancelled, 'Cancelled');
+      await col('subscriptions').updateOne({ id: sub.id }, { $set: { cancelled: value, updated_at: now() } });
+      await log(me, project.id, 'subscription.cancelled',
+        `${value ? 'Cancelled' : 'Restarted'} the yearly subscription for ${project.name}`, { adminOnly: true });
+      return withStatus(await one('subscriptions', { id: sub.id }));
+    },
+    // Deletes a subscription and its renewal history. Payments already received stay.
+    async 'subscriptions.remove'(me, { projectId }) {
+      needAdmin(me);
+      const { project, sub } = await subscriptionOf(projectId);
+      await col('subscriptions').deleteOne({ id: sub.id });
+      await col('renewals').deleteMany({ subscription_id: sub.id });
+      await log(me, project.id, 'subscription.deleted', `Deleted the yearly subscription for ${project.name}`, { adminOnly: true });
+      return null;
+    },
+    // Emails the client a renewal reminder now, whatever the date.
+    async 'subscriptions.remind'(me, { projectId }) {
+      needAdmin(me);
+      const { project, sub } = await subscriptionOf(projectId);
+      const day0 = today();
+      const left = daysBetween(day0, sub.ends_on);
+      const stage = left >= 0 ? 'before' : statusOf({ ...sub, cancelled: false }, day0) === 'grace' ? 'ended' : 'expired';
+      return remindClient(sub, project, stage, left, me);
+    },
+    // Sends today's due reminders now, instead of waiting for the daily job.
+    async 'subscriptions.runReminders'(me) {
+      needAdmin(me);
+      return sendDueReminders(me);
+    },
+
     // --- History ---
     async 'activity.list'(me, { projectId, limit = 50, before } = {}) {
       const filter = {};
@@ -618,6 +775,8 @@ export function createPortal(store, { mailer, github } = {}) {
       if (typeof op !== 'string' || !Object.prototype.hasOwnProperty.call(ops, op)) throw new OpError('Unknown request.', 'unknown_op', 404);
       return ops[op](me, obj(args));
     },
+    // The daily job (routes/cron.js): renewal reminders that are due, sent by "System".
+    sendDueReminders: () => sendDueReminders(null),
   };
 }
 

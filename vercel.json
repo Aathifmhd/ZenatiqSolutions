@@ -8,6 +8,9 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" }
   ],
+  "crons": [
+    { "path": "/api/cron/renewals", "schedule": "30 2 * * *" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

@@ -1,10 +1,11 @@
 // One project: overview, task board, client messages, payments, activity and the widget code.
 import {
   html, icon, mount, pill, avatar, options, LABELS, TYPE_ICON, fmtDate, fmtShort, fmtTime, ago, isOverdue, money,
-  safeUrl, prettyUrl, emptyState, toast, confirmDialog, copyText, friendly, modal, val,
+  safeUrl, prettyUrl, emptyState, toast, confirmDialog, copyText, friendly, modal, val, quotePayments,
 } from '../lib.js';
 import {
   taskModal, projectModal, quoteModal, paymentModal, clientModal, renderConversation, threadRow, activityRow,
+  subscriptionModal, renewModal, paidUntilSays,
 } from './parts.js';
 
 const SITE = ['localhost', '127.0.0.1'].includes(location.hostname) ? location.origin : 'https://www.zenatiqsolutions.com';
@@ -207,7 +208,7 @@ const TABS = {
     const client = store.client(project.client_id);
     const openTasks = tasks.filter((t) => t.status !== 'done').length;
     const openThreads = threads.filter((t) => t.status !== 'resolved').length;
-    const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
+    const paid = quotePayments(payments).reduce((s, p) => s + Number(p.amount), 0);
     const quote = Number(finances?.quoted_amount || 0);
     const link = (url) => (safeUrl(url) ? html`<a href="${safeUrl(url)}" target="_blank" rel="noopener">${prettyUrl(url)} ${icon('external')}</a>` : html`<span class="muted">Not added</span>`);
 
@@ -424,17 +425,47 @@ const TABS = {
   // --- Payments (owners and admins) -------------------------------------------------------
   async payments(ctx, panel, project) {
     const { db, store } = ctx;
-    const [finances, payments] = await Promise.all([db.money.finances(project.id), db.money.payments(project.id)]);
+    const [finances, payments, { subscription: sub, renewals }] = await Promise.all([
+      db.money.finances(project.id), db.money.payments(project.id), db.subscriptions.get(project.id),
+    ]);
     const currency = finances?.currency || 'LKR';
     const quote = Number(finances?.quoted_amount || 0);
-    const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
+    const paid = quotePayments(payments).reduce((s, p) => s + Number(p.amount), 0);
     const pct = quote ? Math.min(100, Math.round((paid / quote) * 100)) : 0;
+    const client = store.client(project.client_id);
+    const remindTo = sub?.email || client?.email;
 
     mount(panel, html`
       <div class="money">
+        <section class="card subcard">
+          ${sub ? html`
+            <header class="card__head"><h2>Yearly subscription</h2>${pill('sub', sub.status)}</header>
+            <div class="subcard__facts">
+              <div><span>Package</span><b>${sub.package}</b></div>
+              <div><span>Yearly price</span><b>${money(sub.price, sub.currency)}</b></div>
+              <div><span>Paid until</span><b>${fmtDate(sub.ends_on)}</b><small class="${['grace', 'expired'].includes(sub.status) ? 'is-due' : ''}">${paidUntilSays(sub)}</small></div>
+              <div><span>Reminders go to</span><b class="${remindTo ? '' : 'is-due'}">${remindTo || 'No email yet'}</b>
+                <small>${sub.last_reminded_at ? `Last one ${ago(sub.last_reminded_at)}` : 'None sent yet'}</small></div>
+            </div>
+            ${sub.notes ? html`<p class="small muted">${sub.notes}</p>` : ''}
+            <div class="subcard__actions">
+              ${sub.status === 'cancelled' ? '' : html`<button class="btn btn--primary btn--sm" type="button" data-act="renew">${icon('a-renew')}Record a renewal</button>
+                <button class="btn btn--ghost btn--sm" type="button" data-act="remind" ${remindTo ? '' : 'disabled'}>${icon('a-send')}Email a reminder now</button>`}
+              <button class="btn btn--ghost btn--sm" type="button" data-act="edit-sub">${icon('a-edit')}Edit</button>
+              <button class="btn btn--ghost btn--sm" type="button" data-act="cancel-sub">${sub.status === 'cancelled' ? 'Restart reminders' : 'Cancel subscription'}</button>
+            </div>
+            ${renewals.length ? html`<details class="subcard__history"><summary>Renewal history (${renewals.length})</summary>
+              <ul class="plist">${renewals.map((r) => html`<li><div><b>${money(r.amount, r.currency)}</b>
+                <small>${r.years} year${r.years > 1 ? 's' : ''}: paid until ${fmtDate(r.to_ends_on)} · ${store.member(r.recorded_by)?.full_name || ''}</small></div>
+                <time>${fmtDate(r.paid_on)}</time></li>`)}</ul></details>` : ''}`
+          : html`<div class="subcard__empty">
+              <div><h2>Yearly subscription</h2><p class="small muted">If ${client?.name || 'the client'} pays every year to keep using this, set it up here. The portal tracks when it's due and emails reminders before then.</p></div>
+              <button class="btn btn--primary btn--sm" type="button" data-act="setup-sub">${icon('a-renew')}Set up a yearly subscription</button>
+            </div>`}
+        </section>
         <section class="card money__summary">
           <div><span>Quoted price</span><b>${finances ? money(quote, currency) : '—'}</b></div>
-          <div><span>Paid so far</span><b>${money(paid, currency)}</b></div>
+          <div><span>Paid towards quote</span><b>${money(paid, currency)}</b></div>
           <div><span>Balance due</span><b class="${quote - paid > 0 ? 'is-due' : ''}">${finances ? money(Math.max(quote - paid, 0), currency) : '—'}</b></div>
           <div class="money__bar" role="img" aria-label="${pct}% paid"><i style="width:${pct}%"></i></div>
           <div class="money__actions">
@@ -450,7 +481,7 @@ const TABS = {
               <thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded by</th><th><span class="sr-only">Actions</span></th></tr></thead>
               <tbody>${payments.map((p) => html`<tr>
                 <td>${fmtDate(p.paid_on)}</td><td class="num">${money(p.amount, currency)}</td><td>${LABELS.method[p.method]}</td>
-                <td>${p.reference || ''}${p.note ? html`<small class="block muted">${p.note}</small>` : ''}</td>
+                <td>${p.kind === 'renewal' ? html`<span class="pill is-renewal">Renewal</span> ` : ''}${p.reference || ''}${p.note ? html`<small class="block muted">${p.note}</small>` : ''}</td>
                 <td>${store.member(p.recorded_by)?.full_name || ''}</td>
                 <td class="right"><button class="icon-btn icon-btn--sm" type="button" data-act="delete" data-id="${p.id}" aria-label="Delete this payment">${icon('a-trash')}</button></td>
               </tr>`)}</tbody>
@@ -459,6 +490,23 @@ const TABS = {
       </div>`, {
       quote: async () => { if (await quoteModal(ctx, project, finances)) render(ctx); },
       pay: async () => { if (await paymentModal(ctx, { projectId: project.id, currency })) render(ctx); },
+      'setup-sub': async () => { if (await subscriptionModal(ctx, project)) render(ctx); },
+      'edit-sub': async () => { if (await subscriptionModal(ctx, project, sub)) render(ctx); },
+      renew: async () => { if (await renewModal(ctx, project, sub)) render(ctx); },
+      remind: async (btn) => {
+        btn.disabled = true;
+        try { const { to } = await db.subscriptions.remind(project.id); toast(`Reminder emailed to ${to}`); render(ctx); }
+        catch (err) { toast(friendly(err), 'error'); btn.disabled = false; }
+      },
+      'cancel-sub': async () => {
+        const restart = sub.status === 'cancelled';
+        if (!restart && !(await confirmDialog({
+          title: 'Cancel this subscription?', confirmLabel: 'Cancel subscription',
+          message: `No more reminder emails go to ${remindTo || 'the client'}. You can restart it, or record a renewal, any time.`,
+        }))) return;
+        try { await db.subscriptions.cancel(project.id, !restart); toast(restart ? 'Reminders are back on' : 'Subscription cancelled'); render(ctx); }
+        catch (err) { toast(friendly(err), 'error'); }
+      },
       delete: async (btn) => {
         const p = payments.find((x) => x.id === btn.dataset.id);
         if (!(await confirmDialog({ title: 'Delete this payment?', message: `${money(p.amount, currency)} on ${fmtDate(p.paid_on)} will be removed.` }))) return;

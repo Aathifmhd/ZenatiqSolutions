@@ -1,5 +1,5 @@
 // Payments: quotes, payments received and balances for every project (owners and admins only).
-import { html, icon, mount, pageHead, money, fmtDate, LABELS, emptyState, remember, recall } from '../lib.js';
+import { html, icon, mount, pageHead, money, fmtDate, LABELS, emptyState, remember, recall, quotePayments } from '../lib.js';
 import { paymentModal } from './parts.js';
 
 export async function render(ctx) {
@@ -9,9 +9,10 @@ export async function render(ctx) {
   const [finances, payments] = await Promise.all([db.money.allFinances(), db.money.payments()]);
   if (!ctx.isCurrent()) return;
 
+  // Balances are against the build quote, so yearly renewals don't count towards them.
   const paidBy = {};
   const lastBy = {};
-  for (const p of payments) {
+  for (const p of quotePayments(payments)) {
     paidBy[p.project_id] = (paidBy[p.project_id] || 0) + Number(p.amount);
     if (!lastBy[p.project_id] || p.paid_on > lastBy[p.project_id]) lastBy[p.project_id] = p.paid_on;
   }
@@ -24,7 +25,7 @@ export async function render(ctx) {
   const month = new Date().toISOString().slice(0, 7);
   const totals = {
     quoted: rows.reduce((s, r) => s + r.quote, 0),
-    received: rows.reduce((s, r) => s + r.paid, 0),
+    received: payments.reduce((s, p) => s + Number(p.amount), 0),
     due: rows.reduce((s, r) => s + r.due, 0),
     month: payments.filter((p) => p.paid_on.startsWith(month)).reduce((s, p) => s + Number(p.amount), 0),
   };
@@ -63,7 +64,7 @@ export async function render(ctx) {
         <header class="card__head"><h2>Latest payments</h2></header>
         ${payments.length ? html`<ul class="plist">${payments.slice(0, 10).map((p) => html`<li>
           <div><b>${money(p.amount, finances.find((f) => f.project_id === p.project_id)?.currency || 'LKR')}</b>
-            <small>${store.project(p.project_id)?.name || ''} · ${LABELS.method[p.method]}</small></div>
+            <small>${store.project(p.project_id)?.name || ''} · ${p.kind === 'renewal' ? 'Yearly renewal · ' : ''}${LABELS.method[p.method]}</small></div>
           <time>${fmtDate(p.paid_on)}</time></li>`)}</ul>` : emptyState('No payments yet')}
       </section>
     </div>`, {

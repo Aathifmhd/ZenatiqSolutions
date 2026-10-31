@@ -1,5 +1,5 @@
 // Dashboard: the day at a glance.
-import { html, icon, mount, pageHead, money, LABELS, ACTIVE_STATUSES, firstName, emptyState, remember } from '../lib.js';
+import { html, icon, mount, pageHead, money, LABELS, ACTIVE_STATUSES, firstName, emptyState, remember, quotePayments } from '../lib.js';
 import { threadRow, taskRow, activityRow, taskModal, projectModal, sortTasks } from './parts.js';
 
 const stat = (label, value, href, iconName, alert = false) => html`
@@ -13,12 +13,13 @@ export async function render(ctx) {
   const { el, db, store, me, isAdmin } = ctx;
   ctx.title = 'Dashboard';
   await store.load();
-  const [threads, myTasks, activity, finances, payments] = await Promise.all([
+  const [threads, myTasks, activity, finances, payments, subs] = await Promise.all([
     db.threads.list(),
     db.tasks.list({ assigneeId: me.id }),
     db.activity.list({ limit: 8 }),
     isAdmin ? db.money.allFinances() : [],
     isAdmin ? db.money.payments() : [],
+    isAdmin ? db.subscriptions.list() : { subscriptions: [] },
   ]);
   if (!ctx.isCurrent()) return;
 
@@ -27,8 +28,10 @@ export async function render(ctx) {
   const open = threads.filter((t) => t.status !== 'resolved');
   const attention = [...waiting, ...open.filter((t) => !t.unread_by_team)].slice(0, 6);
   const openTasks = myTasks.filter((t) => t.status !== 'done').sort(sortTasks);
-  const paidBy = payments.reduce((acc, p) => ({ ...acc, [p.project_id]: (acc[p.project_id] || 0) + Number(p.amount) }), {});
+  const paidBy = quotePayments(payments).reduce((acc, p) => ({ ...acc, [p.project_id]: (acc[p.project_id] || 0) + Number(p.amount) }), {});
   const due = finances.reduce((sum, f) => sum + Math.max(Number(f.quoted_amount) - (paidBy[f.project_id] || 0), 0), 0);
+  const renewalsDue = subs.subscriptions.filter((s) => ['ending', 'grace', 'expired'].includes(s.status));
+  const overdue = renewalsDue.some((s) => s.status !== 'ending');
   const stages = Object.entries(LABELS.status).map(([key, label]) => [key, label, store.projects.filter((p) => p.status === key).length]);
   const most = Math.max(1, ...stages.map((s) => s[2]));
   const hour = new Date().getHours();
@@ -44,6 +47,7 @@ export async function render(ctx) {
       ${stat('Open conversations', open.length, '#/inbox', 'i-chat')}
       ${stat('Your open tasks', openTasks.length, '#/tasks', 'a-tasks')}
       ${isAdmin ? stat('Balance due', money(due), '#/payments', 'a-wallet') : ''}
+      ${isAdmin ? stat('Renewals due in 30 days', renewalsDue.length, '#/renewals', 'a-renew', overdue) : ''}
     </section>
     <div class="grid-2">
       <section class="card">

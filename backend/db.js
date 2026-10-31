@@ -3,7 +3,7 @@ import { MongoClient } from 'mongodb';
 import { attachDatabasePool } from '@vercel/functions';
 
 // Raise this when the indexes below change; each deployment then creates them once.
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const INDEXES = [
   ['team_members', { id: 1 }, { unique: true }],
   ['team_members', { email: 1 }, { unique: true }],
@@ -34,6 +34,11 @@ const INDEXES = [
   // Wrong passwords only count for 15 minutes; MongoDB deletes them after an hour.
   ['login_attempts', { email: 1, at: -1 }],
   ['login_attempts', { at: 1 }, { expireAfterSeconds: 3600 }],
+  ['subscriptions', { id: 1 }, { unique: true }],
+  ['subscriptions', { project_id: 1 }, { unique: true }],
+  ['renewals', { id: 1 }, { unique: true }],
+  ['renewals', { project_id: 1, created_at: -1 }],
+  ['jobs', { id: 1 }, { unique: true }],
 ];
 
 let ready = null;

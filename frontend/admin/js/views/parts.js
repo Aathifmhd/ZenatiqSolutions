@@ -1,7 +1,7 @@
 // Zenatiq admin: pieces shared by several pages (rows, forms, the conversation view).
 import {
   html, icon, mount, modal, confirmDialog, toast, options, pill, avatar, LABELS,
-  ago, fmtShort, fmtTime, isOverdue, val, num, today, safeUrl, friendly,
+  ago, fmtShort, fmtDate, fmtTime, isOverdue, val, num, today, safeUrl, friendly, money,
 } from '../lib.js';
 
 const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
@@ -269,6 +269,120 @@ export function paymentModal(ctx, { projectId = null, currency = 'LKR' } = {}) {
     },
   });
 }
+
+// --- Yearly subscriptions ------------------------------------------------------------
+// The server's date rules (backend/core/renewals.js), here only to preview dates in the forms.
+const utc = (day) => { const [y, m, d] = day.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
+const plusYears = (day, n) => {
+  const [y, m, d] = day.split('-').map(Number);
+  return iso(Date.UTC(y + n, m - 1, Math.min(d, new Date(Date.UTC(y + n, m, 0)).getUTCDate())));
+};
+const paidUntil = (starts, years = 1) => iso(utc(plusYears(starts, years)) - 864e5);
+const renewedUntil = (sub, years, paidOn) =>
+  (paidOn && (utc(paidOn) - utc(sub.ends_on)) / 864e5 > sub.grace_days ? paidUntil(paidOn, years) : plusYears(sub.ends_on, years));
+
+// Setting up, changing or deleting a project's yearly subscription.
+export function subscriptionModal(ctx, project, sub = null) {
+  const client = ctx.store.client(project.client_id);
+  const starts = sub?.starts_on || today();
+  return modal({
+    title: sub ? `Yearly subscription for ${project.name}` : 'Set up a yearly subscription',
+    submitLabel: sub ? 'Save changes' : 'Set up subscription',
+    body: html`
+      ${sub ? '' : html`<p class="modal__text">For what ${client?.name || 'the client'} pays every year for ${project.name}. Reminder emails go out 30, 14, 7 and 1 days before it's due.</p>`}
+      <label class="field"><span>Package</span><input class="input" name="package" required maxlength="120" value="${sub?.package || ''}" placeholder="e.g. POS Business" ${sub ? '' : 'autofocus'}></label>
+      <div class="field-row field-row--money">
+        <label class="field"><span>Currency</span><input class="input" name="currency" maxlength="3" required value="${sub?.currency || 'LKR'}"></label>
+        <label class="field"><span>Yearly price</span><input class="input" name="price" inputmode="decimal" required value="${sub?.price ?? ''}" placeholder="e.g. 25000"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Started on</span><input class="input" type="date" name="starts_on" required value="${starts}"></label>
+        <label class="field"><span>Paid until</span><input class="input" type="date" name="ends_on" required value="${sub?.ends_on || paidUntil(starts)}">
+          <small class="field__hint">The last day that's paid for.</small></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Grace days</span><input class="input" name="grace_days" inputmode="numeric" required value="${sub?.grace_days ?? 14}">
+          <small class="field__hint">Extra days to renew after it ends.</small></label>
+        <label class="field"><span>Reminder email <em>(optional)</em></span><input class="input" type="email" name="email" maxlength="200" value="${sub?.email || ''}" placeholder="${client?.email || 'name@example.com'}">
+          <small class="field__hint">${client?.email ? `Empty: reminders go to ${client.email}.` : 'The client has no email yet, so add one here.'}</small></label>
+      </div>
+      <label class="field"><span>Notes <em>(optional)</em></span><textarea class="input" name="notes" rows="2" placeholder="e.g. 2 tills, SMS credits included">${sub?.notes || ''}</textarea></label>`,
+    actions: sub ? [{ act: 'delete', label: 'Delete', icon: 'a-trash', danger: true }] : [],
+    onAction: async (act) => {
+      if (act !== 'delete') return false;
+      const ok = await confirmDialog({ title: 'Delete this subscription?', message: 'Its renewal history goes too. Payments already recorded stay.' });
+      if (!ok) return false;
+      await ctx.db.subscriptions.remove(project.id);
+      toast('Subscription deleted');
+      return true;
+    },
+    // On a new subscription, "Paid until" follows the start date.
+    onOpen: (form) => {
+      if (sub) return;
+      const { starts_on: start, ends_on: end } = form.elements;
+      start.addEventListener('change', () => { if (start.value) end.value = paidUntil(start.value); });
+    },
+    onSubmit: async (fd) => {
+      const price = num(fd, 'price');
+      if (!(price >= 0)) throw new Error('Enter the yearly price as a number.');
+      await ctx.db.subscriptions.set(project.id, {
+        package: val(fd, 'package'), price, currency: (val(fd, 'currency') || 'LKR').toUpperCase(),
+        starts_on: val(fd, 'starts_on'), ends_on: val(fd, 'ends_on'), grace_days: num(fd, 'grace_days'),
+        email: val(fd, 'email'), notes: val(fd, 'notes'),
+      });
+      toast(sub ? 'Subscription saved' : 'Subscription set up');
+      return true;
+    },
+  });
+}
+
+// Recording a renewal payment, which moves "paid until" on by the years paid for.
+export function renewModal(ctx, project, sub) {
+  return modal({
+    title: `Record a renewal for ${project.name}`,
+    submitLabel: 'Record renewal',
+    body: html`
+      <p class="modal__text">${sub.package}, ${money(sub.price, sub.currency)} a year. Paid until <b>${fmtDate(sub.ends_on)}</b> now.</p>
+      <div class="field-row">
+        <label class="field"><span>Renew for</span><select class="input" name="years">${[1, 2, 3].map((n) => html`<option value="${n}">${n} year${n > 1 ? 's' : ''}</option>`)}</select></label>
+        <label class="field"><span>Amount paid (${sub.currency})</span><input class="input" name="amount" inputmode="decimal" required value="${sub.price}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Paid on</span><input class="input" type="date" name="paid_on" required value="${today()}"></label>
+        <label class="field"><span>Method</span><select class="input" name="method">${options(LABELS.method, 'bank_transfer')}</select></label>
+      </div>
+      <label class="field"><span>Reference <em>(optional)</em></span><input class="input" name="reference" maxlength="120" placeholder="Receipt or transfer no."></label>
+      <p class="renew-preview" data-preview></p>`,
+    onOpen: (form) => {
+      const { years, amount, paid_on: paidOn } = form.elements;
+      const show = () => {
+        form.querySelector('[data-preview]').innerHTML = String(html`${icon('a-renew')}New paid-until date: <b>${fmtDate(renewedUntil(sub, Number(years.value), paidOn.value))}</b>`);
+      };
+      years.addEventListener('change', () => { amount.value = Math.round(sub.price * Number(years.value) * 100) / 100; show(); });
+      paidOn.addEventListener('change', show);
+      show();
+    },
+    onSubmit: async (fd) => {
+      const amount = num(fd, 'amount');
+      if (!(amount >= 0)) throw new Error('Enter the amount paid as a number.');
+      const renewed = await ctx.db.subscriptions.renew(project.id, {
+        years: Number(val(fd, 'years')), amount, paid_on: val(fd, 'paid_on'), method: val(fd, 'method'), reference: val(fd, 'reference'),
+      });
+      toast(`Renewed. ${project.name} is paid until ${fmtDate(renewed.ends_on)}.`);
+      return true;
+    },
+  });
+}
+
+// "in 12 days", "ends today", "ended 3 days ago" for a subscription's paid-until date.
+export const paidUntilSays = (sub) => {
+  if (sub.status === 'cancelled') return 'Reminders are off';
+  const n = sub.days_left;
+  if (n === 0) return 'Ends today';
+  if (n > 0) return `${n} day${n === 1 ? '' : 's'} left`;
+  return `Ended ${-n} day${n === -1 ? '' : 's'} ago`;
+};
 
 // --- Conversation ------------------------------------------------------------------
 const bubble = (m) => html`
