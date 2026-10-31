@@ -2,7 +2,7 @@
 import { html, raw, icon, avatar, friendly, toast, LABELS } from './lib.js';
 import * as db from './data.js';
 
-const cfg = window.ZENATIQ_CONFIG || {};
+let cfg = window.ZENATIQ_CONFIG || {};
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
 const configured = Boolean(cfg.supabaseUrl && cfg.supabaseAnonKey);
 // Demo mode (sample data in this browser only) is limited to local previews.
@@ -45,7 +45,12 @@ start().catch((err) => {
 });
 
 async function start() {
-  if (!configured && !demo) return renderSetup();
+  if (!configured && !demo) {
+    // This browser may be holding an old copy of config.js (Cloudflare tells browsers to keep
+    // scripts for 4 hours), so check the server's current copy before showing the setup screen.
+    cfg = await freshConfig();
+    if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) return renderSetup();
+  }
 
   if (demo) {
     const { createDemoClient } = await import('./demo.js');
@@ -69,6 +74,16 @@ async function start() {
 
   sb.auth.onAuthStateChange((event) => { if (event === 'SIGNED_OUT') location.reload(); });
   await enter(session);
+}
+
+// Loads config.js under a one-off address, so no cache can answer with an old copy.
+function freshConfig() {
+  return new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = `/connect/config.js?fresh=${Date.now()}`;
+    s.onload = s.onerror = () => resolve(window.ZENATIQ_CONFIG || {});
+    document.head.append(s);
+  });
 }
 
 async function enter(session) {

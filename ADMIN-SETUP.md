@@ -52,6 +52,10 @@ The script can be run again later (for example after an update). It never delete
    Both values are meant to be public. The database's access rules protect your data.
    **Never put the `service_role` key here.**
 3. Commit and push. Vercel deploys it automatically.
+4. In Cloudflare, open zenatiqsolutions.com, go to **Caching → Configuration → Browser Cache TTL** and choose
+   **Respect Existing Headers**. Cloudflare's default tells browsers to keep scripts and styles for 4 hours,
+   so updates to the portal and the website can take that long to reach anyone who visited recently.
+   Vercel's own settings already make browsers check for a newer copy each time.
 
 ## 4. Sign in and add your team
 
