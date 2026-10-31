@@ -152,7 +152,7 @@ function renderShell() {
       <button type="button" data-shell="reset-demo">Reset sample data</button></div>` : ''}
     <div class="app">
       <aside class="side" id="side" aria-label="Portal">
-        <a class="side__brand" href="#/"><img src="/assets/zenatiq-logo-light.png" alt="Zenatiq Solutions" width="519" height="150"><span>Admin</span></a>
+        <a class="side__brand" href="#/"><img class="side__mark" src="/assets/zenatiq-icon-192.png" alt="" width="32" height="32"><img class="side__logo" src="/assets/zenatiq-logo-light.png" alt="Zenatiq Solutions" width="519" height="150"><span>Admin</span></a>
         <nav class="side__nav">
           ${NAV.filter((n) => !n.adminOnly || isAdmin()).map((n) => html`
             <a href="${n.href}" data-route="${n.route}">${icon(n.icon)}<span>${n.label}</span>

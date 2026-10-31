@@ -9,7 +9,7 @@
   --ok:#13753a; --warn:#9a5b00; --info:#1f5fbf;
   --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
   --sans:"Instrument Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --radius:14px; --side:276px;
+  --radius:14px; --side:276px; --rail:72px;
   --shadow:0 18px 40px -24px rgba(13,13,15,.35);
 }
 *,*::before,*::after{box-sizing:border-box}
@@ -125,6 +125,7 @@ select.input--sm{padding-right:30px}
 .side{position:sticky;top:0;display:flex;flex-direction:column;gap:18px;height:100vh;padding:20px 14px;overflow-y:auto;background:var(--ink);color:#fff}
 .side__brand{display:flex;align-items:center;gap:10px;padding:4px 8px 10px;text-decoration:none}
 .side__brand img{height:32px;width:auto}
+.side__brand .side__mark{display:none;width:32px;border-radius:8px}
 .side__brand span{padding:3px 8px;border-radius:6px;background:var(--red);font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .side__nav{display:grid;gap:3px}
 .side__nav a{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;color:#c9c4bc;font-weight:500;text-decoration:none;transition:background-color .15s,color .15s}
@@ -270,7 +271,7 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
 .card--numbers span{color:var(--muted);font-size:.8rem}
 .people{display:grid;gap:10px;margin-bottom:12px}
 .people li{display:flex;align-items:center;gap:10px}
-.people li > span{flex:1;min-width:0}
+.people li > span:not(.av){flex:1;min-width:0}
 .people b{display:block;font-size:.9rem}
 .people small{color:var(--muted)}
 .client-name{font-weight:700;margin-bottom:8px}
@@ -448,5 +449,26 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
   .stages a{grid-template-columns:90px 1fr 24px}
   .filters__count{margin-left:0}
   .head__actions{width:100%}
+}
+/* Wide screens with a mouse: the sidebar is a slim rail of icons that opens over the page while
+   the pointer is on it, or while the keyboard is in it. Touch screens keep the full sidebar, and
+   phones the menu button. */
+@media (hover:hover) and (min-width:901px){
+  .app{grid-template-columns:var(--rail) minmax(0,1fr)}
+  .side{z-index:65;width:var(--rail);overflow-x:hidden;transition:width .18s ease .15s,box-shadow .18s ease .15s}
+  .side:is(:hover,:has(:focus-visible)){width:var(--side);box-shadow:18px 0 40px -12px rgba(13,13,15,.45);transition-delay:.1s}
+  .side__brand{padding:4px 6px 10px}
+  .side__brand .side__mark{display:block}
+  .side__brand .side__logo,.side__brand span{display:none}
+  .side:is(:hover,:has(:focus-visible)) .side__brand .side__mark{display:none}
+  .side:is(:hover,:has(:focus-visible)) .side__brand .side__logo{display:block}
+  .side:is(:hover,:has(:focus-visible)) .side__brand span{display:inline}
+  .side__nav a,.side__alerts{position:relative;white-space:nowrap}
+  .side__nav a span,.side__alerts span,.side__who,.side__me .icon-btn{opacity:0;transition:opacity .12s}
+  .side:is(:hover,:has(:focus-visible)) :is(.side__nav a span,.side__alerts span,.side__who,.side__me .icon-btn){opacity:1;transition-delay:.12s}
+  /* While narrow, the unread count sits on the inbox icon. */
+  .side__nav .badge{position:absolute;top:2px;left:26px;min-width:17px;height:17px;padding:0 4px;font-size:.62rem;box-shadow:0 0 0 2px var(--ink)}
+  .side:is(:hover,:has(:focus-visible)) .side__nav .badge{position:static;min-width:20px;height:20px;padding:0 6px;font-size:.72rem;box-shadow:none}
+  .side__me{padding-left:4px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
