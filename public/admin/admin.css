@@ -114,6 +114,7 @@ select.input--sm{padding-right:30px}
 .auth__card p{color:var(--muted)}
 .auth__error{padding:10px 12px;border-radius:10px;background:var(--red-soft);color:var(--red-deep)!important;font-weight:600}
 .auth__fine{font-size:.85rem}
+.auth__google{display:flex;align-items:center;justify-content:center;min-height:50px}
 .auth__demo{padding:8px;border-radius:8px;background:#fff6d6;color:#6b5200!important;font-size:.85rem}
 .boot,.loading{display:grid;place-items:center;min-height:60vh}
 .spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite}

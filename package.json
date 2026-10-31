@@ -1,0 +1,11 @@
+{
+  "name": "zenatiq-website",
+  "private": true,
+  "description": "Zenatiq Solutions website, admin portal and the Contact with Zenatiq API (Vercel functions + MongoDB)",
+  "type": "module",
+  "dependencies": {
+    "@vercel/functions": "^3.10.5",
+    "jose": "^6.2.14",
+    "mongodb": "^7.8.0"
+  }
+}

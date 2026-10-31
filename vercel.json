@@ -3,6 +3,7 @@
   "outputDirectory": "public",
   "cleanUrls": true,
   "trailingSlash": false,
+  "regions": ["bom1"],
   "headers": [
     {
       "source": "/(.*)",
@@ -16,12 +17,8 @@
       "headers": [{ "key": "X-Frame-Options", "value": "SAMEORIGIN" }]
     },
     {
-      "source": "/(admin|connect)(.*)",
+      "source": "/(admin|connect|api)(.*)",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
-    },
-    {
-      "source": "/connect/config.js",
-      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     }
   ]
 }

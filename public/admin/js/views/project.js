@@ -427,9 +427,9 @@ const TABS = {
             <label class="field"><span>Type</span><select class="input" name="category">${options(LABELS.category, 'bug')}</select></label>
             <label class="field"><span>Subject</span><input class="input" name="subject" required value="The contact form isn't sending"></label>
             <label class="field"><span>Message</span><textarea class="input" name="body" rows="4" required>Customers say nothing happens when they press Send.</textarea></label>`,
-          onSubmit: async (fd) => db.client().demoClientMessage(project.id, Object.fromEntries(fd)),
+          onSubmit: async (fd) => db.simulateClientMessage(project.id, Object.fromEntries(fd)),
         });
-        if (sent) { toast('Test message sent. Check the inbox.'); ctx.refreshBadges(); }
+        if (sent) { toast('Test message sent. Check the inbox.'); ctx.refreshBadges(); db.pollNow(); }
       },
     });
   },

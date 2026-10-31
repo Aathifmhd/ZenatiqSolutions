@@ -2,12 +2,12 @@
 import { html, raw, icon, avatar, friendly, toast, LABELS } from './lib.js';
 import * as db from './data.js';
 
-let cfg = window.ZENATIQ_CONFIG || {};
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
-const configured = Boolean(cfg.supabaseUrl && cfg.supabaseAnonKey);
-// Demo mode (sample data in this browser only) is limited to local previews.
-const demo = isLocal && (new URLSearchParams(location.search).has('demo') || !configured);
 const root = document.getElementById('app');
+// Demo mode (sample data in this browser only) is limited to local previews.
+let demo = false;
+let demoApi = null;
+let googleClientId = '';
 
 const VIEWS = {
   dashboard: () => import('./views/dashboard.js'),
@@ -34,7 +34,6 @@ const NAV = [
 
 const GOOGLE_G = raw(`<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`);
 
-let sb;
 let me;
 const current = { token: null, mod: null, ctx: null };
 
@@ -45,53 +44,65 @@ start().catch((err) => {
 });
 
 async function start() {
-  if (!configured && !demo) {
-    // This browser may be holding an old copy of config.js (Cloudflare tells browsers to keep
-    // scripts for 4 hours), so check the server's current copy before showing the setup screen.
-    cfg = await freshConfig();
-    if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) return renderSetup();
+  if (isLocal && new URLSearchParams(location.search).has('demo')) return startDemo();
+  let status;
+  try {
+    status = await request('GET', '/api/auth');
+  } catch (err) {
+    // A local preview without the API (for example firebase serve) runs the demo instead.
+    // Errors from the API itself, like an unreachable database, are shown.
+    if (isLocal && !err.code) return startDemo();
+    throw err;
   }
+  if (!status.configured) return isLocal ? startDemo() : renderSetup(status.missing);
+  googleClientId = status.googleClientId;
+  db.setTransport(async (op, args) => (await request('POST', '/api/portal', { op, args })).data);
+  if (!status.me) return renderSignIn();
+  await enter(status.me);
+}
 
-  if (demo) {
-    const { createDemoClient } = await import('./demo.js');
-    sb = createDemoClient();
-  } else {
-    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm');
-    sb = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
-      auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+async function startDemo() {
+  demo = true;
+  const { createDemo } = await import('./demo.js');
+  demoApi = createDemo();
+  db.setTransport(demoApi.call);
+  const member = demoApi.signedIn() && demoApi.me();
+  if (!member) return renderSignIn();
+  await enter(member);
+}
+
+// Talks to the portal's API on this site. The session lives in an HttpOnly cookie.
+async function request(method, path, body) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method, credentials: 'same-origin',
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
     });
+  } catch {
+    throw new Error('Could not reach the server. Check your internet connection.');
   }
-  db.setClient(sb);
-
-  const url = new URL(location.href);
-  const oauthError = url.searchParams.get('error_description');
-  const { data: { session } } = await sb.auth.getSession();
-  if (url.searchParams.has('code') || url.searchParams.has('error')) {
-    ['code', 'error', 'error_code', 'error_description', 'state'].forEach((k) => url.searchParams.delete(k));
-    history.replaceState(null, '', url.pathname + url.search + url.hash);
-  }
-  if (!session) return renderSignIn(oauthError);
-
-  sb.auth.onAuthStateChange((event) => { if (event === 'SIGNED_OUT') location.reload(); });
-  await enter(session);
+  const json = await res.json().catch(() => null);
+  if (res.ok && json) return json;
+  // Signed out somewhere else, or access was removed: back to the sign-in screen.
+  if (res.status === 401 && path === '/api/portal' && me) location.reload();
+  const err = new Error(json?.error?.message || `The server couldn't answer (error ${res.status}).`);
+  throw Object.assign(err, { code: json?.error?.code, status: res.status, email: json?.error?.email });
 }
 
-// Loads config.js under a one-off address, so no cache can answer with an old copy.
-function freshConfig() {
-  return new Promise((resolve) => {
-    const s = document.createElement('script');
-    s.src = `/connect/config.js?fresh=${Date.now()}`;
-    s.onload = s.onerror = () => resolve(window.ZENATIQ_CONFIG || {});
-    document.head.append(s);
-  });
+async function signOut() {
+  if (demo) demoApi.signOut();
+  else await request('POST', '/api/auth', { op: 'signout' }).catch(() => {});
+  try { window.google?.accounts.id.disableAutoSelect(); } catch { /* not loaded */ }
+  location.reload();
 }
 
-async function enter(session) {
+async function enter(member) {
   root.innerHTML = '<div class="boot"><span class="spinner"></span></div>';
+  me = member;
   await db.store.load();
-  const email = (session.user.email || '').toLowerCase();
-  me = db.store.team.find((m) => m.email === email && m.active);
-  if (!me) return renderNoAccess(email);
+  me = db.store.member(member.id) || member;
 
   renderShell();
   window.addEventListener('hashchange', route);
@@ -103,34 +114,76 @@ async function enter(session) {
 const isAdmin = () => me && ['owner', 'admin'].includes(me.role);
 
 // --- Screens before the portal ------------------------------------------------
-function renderSetup() {
+function renderSetup(missing = []) {
   root.innerHTML = String(html`
     <div class="auth"><div class="auth__card">
       <img class="auth__logo" src="/assets/zenatiq-logo.png" alt="Zenatiq Solutions" width="519" height="150">
       <h1>Almost there</h1>
-      <p>The admin portal isn't connected to its database yet. Add your Supabase project URL and anon key to
-        <code>public/connect/config.js</code>, then deploy. The steps are in <code>ADMIN-SETUP.md</code>.</p>
+      <p>The admin portal isn't connected to its database yet. In Vercel, add
+        ${missing.map((name, i) => html`${i ? (i === missing.length - 1 ? ' and ' : ', ') : ''}<code>${name}</code>`)}
+        under Settings → Environment Variables, then redeploy. The steps are in <code>ADMIN-SETUP.md</code>.</p>
     </div></div>`);
 }
 
-function renderSignIn(error) {
+function renderSignIn() {
   root.innerHTML = String(html`
     <div class="auth"><div class="auth__card">
       <img class="auth__logo" src="/assets/zenatiq-logo.png" alt="Zenatiq Solutions" width="519" height="150">
       <h1>Admin portal</h1>
       <p>Projects, tasks, payments and client messages for the Zenatiq team, all in one place.</p>
-      ${error ? html`<p class="auth__error" role="alert">${error}</p>` : ''}
-      <button class="btn btn--google" type="button" data-shell="google">${GOOGLE_G}<span>Continue with Google</span></button>
+      <p class="auth__error" role="alert" hidden></p>
+      ${demo
+        ? html`<button class="btn btn--google" type="button" data-shell="google">${GOOGLE_G}<span>Continue with Google</span></button>`
+        : html`<div class="auth__google" data-gsi><span class="spinner"></span></div>`}
       <p class="auth__fine">Only people an owner or admin has added to the team can get in.</p>
       ${demo ? html`<p class="auth__demo">Demo mode: sample data, stored only in this browser.</p>` : ''}
     </div></div>`);
-  const button = root.querySelector('[data-shell="google"]');
-  button.addEventListener('click', async () => {
-    button.disabled = true;
-    const redirectTo = location.origin + location.pathname + (demo ? '?demo' : '');
-    const { error: err } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
-    if (err) { toast(friendly(err), 'error'); button.disabled = false; }
+  if (!demo) return mountGoogleButton(root.querySelector('[data-gsi]'));
+  root.querySelector('[data-shell="google"]').addEventListener('click', () => {
+    demoApi.signIn();
+    const member = demoApi.me();
+    if (member) return enter(member);
+    demoApi.reset();
+    location.reload();
   });
+}
+
+const showSignInError = (message) => {
+  const box = root.querySelector('.auth__error');
+  if (box) Object.assign(box, { textContent: message, hidden: false });
+};
+
+// Google's own "Sign in with Google" button. It hands back a signed ID token, which the
+// server checks before starting a session.
+async function mountGoogleButton(box) {
+  try {
+    await new Promise((resolve, reject) => {
+      if (window.google?.accounts?.id) return resolve();
+      const s = Object.assign(document.createElement('script'), { src: 'https://accounts.google.com/gsi/client', async: true });
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.append(s);
+    });
+    google.accounts.id.initialize({ client_id: googleClientId, callback: onGoogleSignIn, ux_mode: 'popup', auto_select: false, context: 'signin' });
+    box.replaceChildren();
+    google.accounts.id.renderButton(box, {
+      type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'pill', logo_alignment: 'center',
+      width: Math.min(Math.max(box.clientWidth, 220), 360), locale: 'en',
+    });
+  } catch {
+    box.replaceChildren();
+    showSignInError('Google sign-in could not load. Check your internet connection, then reload the page.');
+  }
+}
+
+async function onGoogleSignIn({ credential }) {
+  try {
+    const { me: member } = await request('POST', '/api/auth', { op: 'google', credential });
+    await enter(member);
+  } catch (err) {
+    if (err.code === 'no_access') return renderNoAccess(err.email);
+    showSignInError(friendly(err));
+  }
 }
 
 function renderNoAccess(email) {
@@ -138,11 +191,11 @@ function renderNoAccess(email) {
     <div class="auth"><div class="auth__card">
       <img class="auth__logo" src="/assets/zenatiq-logo.png" alt="Zenatiq Solutions" width="519" height="150">
       <h1>You're not on the team yet</h1>
-      <p>You're signed in as <b>${email}</b>, but this Google account isn't on the Zenatiq team.
-        Ask an owner or admin to add it on the Team page, then sign in again.</p>
-      <button class="btn btn--primary" type="button" data-shell="signout">${icon('a-logout')}Sign out</button>
+      <p><b>${email}</b> isn't on the Zenatiq team. Ask an owner or admin to add this Google account
+        on the Team page, then sign in again.</p>
+      <button class="btn btn--primary" type="button" data-shell="again">Use another Google account</button>
     </div></div>`);
-  root.querySelector('[data-shell="signout"]').addEventListener('click', () => db.signOut());
+  root.querySelector('[data-shell="again"]').addEventListener('click', () => renderSignIn());
 }
 
 // --- Portal layout --------------------------------------------------------------
@@ -183,10 +236,10 @@ function renderShell() {
     const btn = e.target.closest('[data-shell]');
     if (!btn) return;
     const action = btn.dataset.shell;
-    if (action === 'signout') db.signOut();
+    if (action === 'signout') signOut();
     if (action === 'open-nav') document.body.classList.add('nav-open');
     if (action === 'close-nav') closeNav();
-    if (action === 'reset-demo') { localStorage.removeItem('zenatiq-demo-db'); location.reload(); }
+    if (action === 'reset-demo') { demoApi.reset(); location.reload(); }
     if (action === 'alerts') {
       if (!('Notification' in window)) return toast('This browser does not support desktop alerts.', 'warn');
       const result = await Notification.requestPermission();

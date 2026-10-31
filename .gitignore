@@ -5,6 +5,11 @@ firebase-debug.log*
 # Local tooling (preview launch config)
 .claude/
 
+# Server packages and local secrets (MONGODB_URI etc. live in Vercel's settings)
+node_modules/
+.env*
+.vercel/
+
 # Sales material kept off GitHub until decided
 outreach/
 Zenatiq-Kandy-Leads.pdf

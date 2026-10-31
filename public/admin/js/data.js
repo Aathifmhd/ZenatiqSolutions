@@ -1,15 +1,10 @@
-// Zenatiq admin: every read and write to the database goes through here.
-// Access rules live in the database (supabase/schema.sql), not in this file.
+// Zenatiq admin: every read and write goes through here. The live portal sends each operation to
+// the portal API (api/portal.js, backed by MongoDB); demo mode runs the same operations in this
+// browser. The rules about who may do what live in core/ops.js, not in this file.
 
-let sb;
-export const setClient = (client) => { sb = client; };
-export const client = () => sb;
-
-const run = async (query) => {
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return data;
-};
+let send;
+export const setTransport = (fn) => { send = fn; };
+const call = (op, args = {}) => send(op, args);
 
 // Lists that almost every page needs, loaded once and refreshed after changes.
 export const store = {
@@ -17,11 +12,7 @@ export const store = {
   clients: [],
   projects: [],
   async load() {
-    [this.team, this.clients, this.projects] = await Promise.all([
-      run(sb.from('team_members').select('*').order('full_name')),
-      run(sb.from('clients').select('*').order('name')),
-      run(sb.from('projects').select('*').order('updated_at', { ascending: false })),
-    ]);
+    ({ team: this.team, clients: this.clients, projects: this.projects } = await call('load'));
   },
   member(id) { return this.team.find((m) => m.id === id); },
   client(id) { return this.clients.find((c) => c.id === id); },
@@ -30,94 +21,96 @@ export const store = {
 };
 
 export const team = {
-  add: (row) => run(sb.from('team_members').insert(row).select().single()),
-  update: (id, patch) => run(sb.from('team_members').update(patch).eq('id', id).select().single()),
-  remove: (id) => run(sb.from('team_members').delete().eq('id', id)),
+  add: (row) => call('team.add', { row }),
+  update: (id, patch) => call('team.update', { id, patch }),
+  remove: (id) => call('team.remove', { id }),
 };
 
 export const clients = {
-  add: (row) => run(sb.from('clients').insert(row).select().single()),
-  update: (id, patch) => run(sb.from('clients').update(patch).eq('id', id).select().single()),
-  remove: (id) => run(sb.from('clients').delete().eq('id', id)),
+  add: (row) => call('clients.add', { row }),
+  update: (id, patch) => call('clients.update', { id, patch }),
+  remove: (id) => call('clients.remove', { id }),
 };
 
 export const projects = {
-  get: (id) => run(sb.from('projects').select('*').eq('id', id).maybeSingle()),
-  add: (row) => run(sb.from('projects').insert(row).select().single()),
-  update: (id, patch) => run(sb.from('projects').update(patch).eq('id', id).select().single()),
-  remove: (id) => run(sb.from('projects').delete().eq('id', id)),
-  newKey: (id) => run(sb.from('projects').update({ connect_key: randomKey() }).eq('id', id).select().single()),
-  members: (projectId) => run(sb.from('project_members').select('*').eq('project_id', projectId)),
-  allMembers: () => run(sb.from('project_members').select('*')),
-  assign: (projectId, memberId) => run(sb.from('project_members').insert({ project_id: projectId, member_id: memberId })),
-  unassign: (projectId, memberId) =>
-    run(sb.from('project_members').delete().eq('project_id', projectId).eq('member_id', memberId)),
+  get: (id) => call('projects.get', { id }),
+  add: (row) => call('projects.add', { row }),
+  update: (id, patch) => call('projects.update', { id, patch }),
+  remove: (id) => call('projects.remove', { id }),
+  newKey: (id) => call('projects.newKey', { id }),
+  members: (projectId) => call('projects.members', { projectId }),
+  allMembers: () => call('projects.allMembers'),
+  assign: (projectId, memberId) => call('projects.assign', { projectId, memberId }),
+  unassign: (projectId, memberId) => call('projects.unassign', { projectId, memberId }),
 };
 
 export const tasks = {
-  list: ({ projectId, assigneeId } = {}) => {
-    let q = sb.from('tasks').select('*');
-    if (projectId) q = q.eq('project_id', projectId);
-    if (assigneeId) q = q.eq('assignee_id', assigneeId);
-    return run(q.order('position'));
-  },
-  add: (row) => run(sb.from('tasks').insert(row).select().single()),
-  update: (id, patch) => run(sb.from('tasks').update(patch).eq('id', id).select().single()),
-  remove: (id) => run(sb.from('tasks').delete().eq('id', id)),
+  list: ({ projectId, assigneeId } = {}) => call('tasks.list', { projectId, assigneeId }),
+  add: (row) => call('tasks.add', { row }),
+  update: (id, patch) => call('tasks.update', { id, patch }),
+  remove: (id) => call('tasks.remove', { id }),
 };
 
 export const threads = {
-  list: ({ projectId } = {}) => {
-    let q = sb.from('threads').select('*');
-    if (projectId) q = q.eq('project_id', projectId);
-    return run(q.order('last_message_at', { ascending: false }));
-  },
-  get: (id) => run(sb.from('threads').select('*').eq('id', id).maybeSingle()),
-  add: (row) => run(sb.from('threads').insert(row).select().single()),
-  update: (id, patch) => run(sb.from('threads').update(patch).eq('id', id).select().single()),
-  messages: (threadId) => run(sb.from('messages').select('*').eq('thread_id', threadId).order('created_at')),
-  reply: (threadId, body) => run(sb.from('messages').insert({ thread_id: threadId, sender: 'team', body }).select().single()),
-  unreadCount: async () => (await run(sb.from('threads').select('id').eq('unread_by_team', true))).length,
+  list: ({ projectId } = {}) => call('threads.list', { projectId }),
+  get: (id) => call('threads.get', { id }),
+  add: (row) => call('threads.add', { row }),
+  update: (id, patch) => call('threads.update', { id, patch }),
+  messages: (threadId) => call('threads.messages', { threadId }),
+  reply: (threadId, body) => call('threads.reply', { threadId, body }),
+  unreadCount: () => call('threads.unreadCount'),
 };
 
 export const money = {
-  finances: (projectId) => run(sb.from('project_finances').select('*').eq('project_id', projectId).maybeSingle()),
-  allFinances: () => run(sb.from('project_finances').select('*')),
+  finances: (projectId) => call('money.finances', { projectId }),
+  allFinances: () => call('money.allFinances'),
   setQuote: (projectId, quotedAmount, currency = 'LKR', notes = null) =>
-    run(sb.from('project_finances')
-      .upsert({ project_id: projectId, quoted_amount: quotedAmount, currency, notes }, { onConflict: 'project_id' })
-      .select().single()),
-  payments: (projectId) => {
-    let q = sb.from('payments').select('*');
-    if (projectId) q = q.eq('project_id', projectId);
-    return run(q.order('paid_on', { ascending: false }));
-  },
-  addPayment: (row) => run(sb.from('payments').insert(row).select().single()),
-  removePayment: (id) => run(sb.from('payments').delete().eq('id', id)),
+    call('money.setQuote', { projectId, quotedAmount, currency, notes }),
+  payments: (projectId) => call('money.payments', { projectId }),
+  addPayment: (row) => call('money.addPayment', { row }),
+  removePayment: (id) => call('money.removePayment', { id }),
 };
 
 export const activity = {
-  list: ({ projectId, limit = 50, before } = {}) => {
-    let q = sb.from('activity').select('*');
-    if (projectId) q = q.eq('project_id', projectId);
-    if (before) q = q.lt('id', before);
-    return run(q.order('id', { ascending: false }).limit(limit));
-  },
+  list: ({ projectId, limit = 50, before } = {}) => call('activity.list', { projectId, limit, before }),
 };
 
-export function randomKey() {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
+// Demo mode only: pretend a client wrote through the Contact with Zenatiq widget.
+export const simulateClientMessage = (projectId, fields) => call('demo.clientMessage', { projectId, ...fields });
 
-// Live updates (Supabase Realtime): calls onChange(table, payload) for every change.
+// Live updates: asks what changed every 12 seconds (every minute in a background tab) and calls
+// onChange(table, payload) once for each change, the way the pages expect.
+let checkNow = () => {};
+export const pollNow = () => checkNow();
 export function subscribe(onChange) {
-  const channel = sb.channel('portal');
-  for (const table of ['threads', 'messages', 'tasks', 'activity']) {
-    channel.on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => onChange(table, payload));
-  }
-  channel.subscribe();
-  return () => sb.removeChannel(channel);
+  let since = null;
+  let timer;
+  let busy = false;
+  const seen = new Set();
+  const tick = async () => {
+    clearTimeout(timer);
+    if (busy) return;
+    busy = true;
+    try {
+      const { now, changes } = await call('poll', { since });
+      let any = false;
+      for (const c of changes) {
+        if (seen.has(c.id)) continue;
+        seen.add(c.id);
+        // The first check only learns what already happened.
+        if (since) {
+          any = true;
+          onChange(c.table, { eventType: c.op, new: { ...c.row, project_id: c.project_id }, old: { project_id: c.project_id } });
+        }
+      }
+      if (any) onChange('activity', {});
+      since = now;
+      if (seen.size > 3000) [...seen].slice(0, 1500).forEach((id) => seen.delete(id));
+    } catch { /* try again next time */ }
+    busy = false;
+    timer = setTimeout(tick, document.hidden ? 60000 : 12000);
+  };
+  checkNow = tick;
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+  tick();
 }
-
-export const signOut = () => sb.auth.signOut();

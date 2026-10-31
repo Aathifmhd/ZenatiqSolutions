@@ -65,35 +65,27 @@
   const time = (ts) => new Date(ts).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
   // --- Talking to Zenatiq --------------------------------------------------------
-  let cfg = {};
-  const loadConfig = () => new Promise((resolve, reject) => {
-    if (window.ZENATIQ_CONFIG) return resolve(window.ZENATIQ_CONFIG);
-    const s = document.createElement('script');
-    s.src = `${base}/connect/config.js`;
-    s.onload = () => resolve(window.ZENATIQ_CONFIG || {});
-    s.onerror = () => reject(new Error('Contact with Zenatiq could not load. Check your internet connection.'));
-    document.head.appendChild(s);
-  });
-  async function rpc(fn, args) {
-    if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) throw new Error('Contact with Zenatiq is not connected yet.');
+  // Sent as text/plain so browsers don't need an extra permission check (CORS preflight) first.
+  async function api(op, args = {}) {
     let res;
     try {
-      res = await fetch(`${cfg.supabaseUrl}/rest/v1/rpc/${fn}`, {
+      res = await fetch(`${base}/api/connect`, {
         method: 'POST',
-        headers: { apikey: cfg.supabaseAnonKey, Authorization: `Bearer ${cfg.supabaseAnonKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ p_key: key, ...args }),
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: JSON.stringify({ ...args, op, key }),
       });
     } catch {
       throw new Error('No connection. Check your internet and try again.');
     }
-    const data = await res.json().catch(() => null);
-    if (!res.ok) {
-      const err = new Error(data?.message || 'Something went wrong. Please try again.');
-      err.code = data?.code;
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json) {
+      const err = new Error(json?.error?.message || 'Something went wrong. Please try again.');
+      err.code = json?.error?.code;
       throw err;
     }
-    return data;
+    return json.data;
   }
+  const BAD_KEY = 'This Contact with Zenatiq link is not set up correctly. Please let Zenatiq know.';
 
   // --- Layout ------------------------------------------------------------------------
   const host = h('div', { 'data-zenatiq-connect': '' });
@@ -175,9 +167,9 @@
       saved.set('zq-connect-name', String(f.get('name') || '').trim());
       saved.set('zq-connect-contact', String(f.get('contact') || '').trim());
       try {
-        const id = await rpc('connect_new_thread', {
-          p_subject: subject, p_body: text, p_category: f.get('category') || 'question',
-          p_name: f.get('name') || null, p_contact: f.get('contact') || null,
+        const id = await api('start', {
+          subject, body: text, category: f.get('category') || 'question',
+          name: f.get('name') || null, contact: f.get('contact') || null,
         });
         await loadThreads();
         const thread = state.threads.find((t) => t.id === id);
@@ -216,7 +208,7 @@
       button.disabled = true;
       err.hidden = true;
       try {
-        await rpc('connect_reply', { p_thread: t.id, p_body: text, p_name: saved.get('zq-connect-name') || null });
+        await api('reply', { thread: t.id, body: text, name: saved.get('zq-connect-name') || null });
         textarea.value = '';
         await openThread(t);
       } catch (ex) {
@@ -244,14 +236,14 @@
 
   // --- Data -----------------------------------------------------------------------------
   async function loadThreads() {
-    state.threads = (await rpc('connect_threads', {})) || [];
+    state.threads = (await api('threads')) || [];
     state.unread = state.threads.filter((t) => t.unread).length;
     badge.textContent = String(state.unread);
     badge.hidden = state.unread === 0;
   }
   async function openThread(t, { sent = false } = {}) {
     state.thread = t;
-    state.messages = (await rpc('connect_messages', { p_thread: t.id })) || [];
+    state.messages = (await api('messages', { thread: t.id })) || [];
     state.view = 'thread';
     state.sent = sent;
     const fresh = state.threads.find((x) => x.id === t.id);
@@ -265,7 +257,7 @@
   async function refresh() {
     try {
       if (state.view === 'thread' && state.thread) {
-        const msgs = (await rpc('connect_messages', { p_thread: state.thread.id })) || [];
+        const msgs = (await api('messages', { thread: state.thread.id })) || [];
         if (msgs.length !== state.messages.length) { state.messages = msgs; render(); }
         await loadThreads();
         const current = state.threads.find((t) => t.id === state.thread.id);
@@ -275,7 +267,7 @@
         render();
       }
     } catch (ex) {
-      state.error = ex.code === '28000' ? 'This Contact with Zenatiq link is not set up correctly. Please let Zenatiq know.' : ex.message;
+      state.error = ex.code === 'bad_key' ? BAD_KEY : ex.message;
       render();
     }
   }
@@ -295,13 +287,12 @@
     body.replaceChildren(h('div', { class: 'empty' }, h('span', { class: 'spinner' })));
     try {
       if (!key) throw Object.assign(new Error('This Contact with Zenatiq link is missing its key. Please let Zenatiq know.'), { code: 'nokey' });
-      cfg = await loadConfig();
-      const info = (await rpc('connect_info', {}))?.[0];
+      const info = await api('info');
       state.project = info?.project_name || '';
       titleSub.textContent = state.project ? `For ${state.project}` : 'We usually reply within a day';
       await loadThreads();
     } catch (ex) {
-      state.error = ex.code === '28000' ? 'This Contact with Zenatiq link is not set up correctly. Please let Zenatiq know.' : ex.message;
+      state.error = ex.code === 'bad_key' ? BAD_KEY : ex.message;
     }
     render();
     schedule();

@@ -112,10 +112,7 @@ export function toast(message, kind = 'ok') {
 
 export function friendly(err) {
   const m = String(err?.message || err || 'Something went wrong.');
-  if (/row-level security|permission denied/i.test(m)) return "You don't have permission to do that.";
-  if (/team_members_email_idx|duplicate key.*email/i.test(m)) return 'That email is already on the team.';
-  if (/connect_key/i.test(m) && /duplicate/i.test(m)) return 'Please try again.';
-  if (/Failed to fetch|NetworkError/i.test(m)) return 'Could not reach the server. Check your internet connection.';
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Could not reach the server. Check your internet connection.';
   return m;
 }
 
