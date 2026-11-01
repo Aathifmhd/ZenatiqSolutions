@@ -4,7 +4,7 @@ The portal lives at **https://www.zenatiqsolutions.com/admin**. It has:
 
 - **Projects** with their live site, admin panel and repository links, stage, dates and team
 - **Task boards** (To do, In progress, Review, Done) for every project
-- **Contact with Zenatiq**: an inbox for messages clients send from their own websites
+- **Contact Clients**: the inbox for messages clients send from the Contact Zenatiq page in their own systems
 - **Clients**, **Team** (sign-in with email and password), **Payments** (owners and admins only) and an **Activity** log that can't be edited
 - Each project's **Activity** tab also lists every commit in its GitHub repository
 - **Renewals** for yearly packages: reminder emails to clients, a renewal page where they pay online or by bank transfer, and licences that make client systems read-only once a subscription runs out
@@ -100,23 +100,38 @@ npm run member -- password you@example.com
 | Delete projects and clients | ✓ | ✓ | |
 | Make someone an owner, or send an owner a new password | ✓ | | |
 
-## 5. Connect a client's website ("Contact with Zenatiq")
+## 5. Connect a client's system ("Contact Zenatiq")
+
+Each client system gets a **Contact Zenatiq** page, last in its menu, with the subscription details and the **message center**, where the client reports problems, asks for changes and reads your replies. The same change adds the [licence check](#licences-for-client-systems) and the renewal banner. GMS Hardware's system is built this way.
 
 1. Open the project, then the **Widget** tab.
-2. Copy one of the three options into the **client's admin panel** (not their public site):
-   - **Floating button** (recommended): paste the script tag before `</body>`.
-     For React admin panels, put it in `index.html`.
-   - **Inside a page**: for example a "Support" page in their admin panel.
-   - **A link**: for systems where you can't add code (for example the Odoo POS at Regal Hardware). Add it as a menu item or bookmark.
-3. Use **Open the client view** on the same tab to send yourself a test message.
+2. **Copy the prompt** and paste it into Claude Code (or another AI coding assistant) working in the client system's code. The project's details and key are filled in, so paste it only into tools you trust.
+3. On the system's host, set `ZENATIQ_KEY` to the key under **Project key**, then deploy.
+4. Use **Open the client view** on the same tab to send yourself a test message.
 
-**Or let an AI assistant do it all.** At the top of the **Widget** tab, **Copy the prompt** and paste it into Claude Code (or another AI coding assistant) working in the client system's code. It adds the [licence check](#licences-for-client-systems), the renewal banner, and a **Contact Zenatiq** section, last in the system's menu, with the subscription details and the messages with Zenatiq, as in GMS Hardware's system. The project's key and details are filled in, so paste it only into tools you trust. Then set `ZENATIQ_KEY` on the system's host.
+Each project has its own secret key, shown under **Project key**. A key only reaches that project's conversations, and each project is limited to 30 client messages an hour. The switch there turns the message center on or off; the licence check keeps working either way. If a key ends up somewhere public, click **Make a new key** and set the new one as `ZENATIQ_KEY` on the system's server (see [Licences](#licences-for-client-systems)).
 
-Each project has its own secret key. A key only reaches that project's conversations, and each project is limited to 30 client messages an hour. If a key ends up somewhere public, click **Make a new key** and paste the new code. The same key is the system's licence key, so update `ZENATIQ_KEY` too (see [Licences](#licences-for-client-systems)).
+The prompt depends on how the client pays (see [Packages](#packages-one-time-or-yearly)):
+- **Yearly subscription:** the Contact Zenatiq page shows the subscription and what it includes, and the system gets the licence check and the renewal banner.
+- **One-time purchase:** the page shows the package, its free updates and services, and what's included. There's no licence check and no renewal button.
 
-For a project with a yearly subscription, the widget also has a **Subscription** tab with the package, the "paid until" date and a **Renew now** button. When renewal is due within 30 days or overdue, the floating button shows a banner across the top of the page, which clients can hide for the day. To never show the banner, add `data-banner="off"` to the script tag.
+The message center also has a **Subscription** tab for yearly subscriptions, with the package, the "paid until" date and a **Renew now** button.
 
 New client messages show a red badge and a pop-up in the portal within about 12 seconds (about a minute when the tab is in the background). Turn on **Desktop alerts** in the sidebar to get a notification when the portal isn't the tab you're looking at.
+
+## Packages: one-time or yearly
+
+Every project is one or the other. When you create a project, choose under **How does the client pay?**; the Projects page then labels it **One-time** or **Yearly**.
+
+| | One-time purchase | Yearly subscription |
+|---|---|---|
+| The client pays | once, for the build | every year |
+| Updates and services | free for 2 months after it goes live, then charged separately and quoted first | all services and small updates while it's paid |
+| In their system | Contact Zenatiq page: the package, its free period, what's included, messages | Contact Zenatiq page: the subscription, what's included, messages; plus the licence check and the renewal banner |
+
+**A one-time purchase's 2 free months** start when the project's stage changes to **Live**: the portal notes the end date then. See it, or change it, on the project's **Payments** tab. To turn a one-time purchase into a yearly one, use **Switch to a yearly subscription** there.
+
+**What each package includes** is in `backend/core/packages.js`. Client systems ask Zenatiq for it on their Contact Zenatiq page, so a change there reaches them all after the next deploy, with no change to their code.
 
 ## Yearly subscriptions and renewals
 
@@ -124,7 +139,7 @@ New client messages show a red badge and a pop-up in the portal within about 12 
 - **A new project:** under **How does the client pay?**, choose **Yearly subscription**, then enter the package name and the yearly price. The first year starts on the project's start date, or today.
 - **An existing project:** open its **Payments** tab and choose **Set up a yearly subscription**. There you can also set the "paid until" date (the last day that's paid for), the grace days, and a reminder email if the client's own email shouldn't get them.
 
-Projects with a subscription have a **Yearly** label on the Projects page. On the website, the pricing page explains one-time purchases and yearly packages, and says each quote shows the first-year and yearly renewal prices. The terms clients agree to are at https://www.zenatiqsolutions.com/terms: no refund once a paid year has started, 14 grace days, then read-only, and their data kept for 90 days after that.
+On the website, the pricing page explains one-time purchases and yearly packages, and says each quote shows the first-year and yearly renewal prices. The terms clients agree to are at https://www.zenatiqsolutions.com/terms: no refund once a paid year has started, 14 grace days, then read-only, and their data kept for 90 days after that.
 
 **Track them on the Renewals page** (owners and admins only). Every subscription has a status:
 
@@ -191,11 +206,11 @@ Anyone with `LICENSE_PRIVATE_KEY` could make a licence for any system, so guard 
 2. Put the new public key it prints into `ZENATIQ_PUBLIC_KEY` in `frontend/license/zenatiq-license.mjs`.
 3. Update Vercel and the module in every client system.
 
-**Add the check to a system.** The quickest way is the prompt at the top of the project's **Widget** tab (see [Connect a client's website](#5-connect-a-clients-website-contact-with-zenatiq)). By hand: it needs a Node.js 18 server, such as an Express API. Everything below is also on the project's **Widget** tab, under **Licence check**, with the project's own key filled in and a **Copy** button for each part.
+**Add the check to a system.** Use the prompt on the project's **Widget** tab (see [Connect a client's system](#5-connect-a-clients-system-contact-zenatiq)): it adds the check along with the Contact Zenatiq page. What it does, if you'd rather do it by hand: it needs a Node.js 18 server, such as an Express API.
 
 On Vercel, or any host that pauses the server between requests, leave out `file` and the `await license.start()` line. The guard then checks with the first request, and again when a check is due. A check started while Vercel loads the server can be frozen until it times out, which GMS Hardware ran into.
 1. Copy `frontend/license/zenatiq-license.mjs` into the system's server code. It's also at https://www.zenatiqsolutions.com/license/zenatiq-license.mjs.
-2. On the system's server, set `ZENATIQ_KEY` to the project's key, which the **Licence check** section shows.
+2. On the system's server, set `ZENATIQ_KEY` to the project's key, shown under **Project key** on its **Widget** tab.
 3. In the server:
 
    ```js

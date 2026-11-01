@@ -1,7 +1,7 @@
 // One project: overview, task board, client messages, payments, activity and the widget code.
 import {
   html, icon, mount, pill, avatar, options, LABELS, TYPE_ICON, fmtDate, fmtShort, fmtTime, ago, isOverdue, money,
-  safeUrl, prettyUrl, emptyState, toast, confirmDialog, copyText, friendly, modal, val, quotePayments,
+  safeUrl, prettyUrl, emptyState, toast, confirmDialog, copyText, friendly, modal, val, quotePayments, today,
 } from '../lib.js';
 import {
   taskModal, projectModal, quoteModal, paymentModal, clientModal, renderConversation, threadRow, activityRow,
@@ -195,6 +195,30 @@ export function onLive(ctx, table, payload) {
   }
 }
 const debounce = (ctx, fn) => { clearTimeout(ctx.liveTimer); ctx.liveTimer = setTimeout(() => ctx.isCurrent() && fn(), 500); };
+
+// A one-time purchase on the Payments tab: when its free updates and services end (2 months after it
+// goes live, set automatically then), and the way to switch it to a yearly subscription.
+function oneTimeCard(project) {
+  const until = project.support_until;
+  const live = ['live', 'maintenance', 'completed'].includes(project.status);
+  const left = until ? Math.round((Date.parse(until) - Date.parse(today())) / 864e5) : null;
+  const [label, tone] = left == null ? [live ? 'Date not set' : 'Not live yet', 'is-cancelled']
+    : left > 14 ? ['Free services', 'is-active'] : left >= 0 ? ['Free services ending', 'is-ending'] : ['Paid services', 'is-cancelled'];
+  const says = left == null
+    ? (live ? 'Set the day the 2 free months end.' : 'Set by itself when the stage changes to Live: 2 months of free updates and services.')
+    : left > 0 ? `${left} day${left === 1 ? '' : 's'} left. After that, services are charged separately.`
+      : left === 0 ? 'The last free day is today.' : `Ended ${-left} day${left === -1 ? '' : 's'} ago: services are charged separately now.`;
+  return html`
+    <header class="card__head"><h2>One-time purchase</h2><span class="pill ${tone}">${label}</span></header>
+    <div class="subcard__facts">
+      <div><span>Package</span><b>One-time purchase</b><small>Paid once, for the build</small></div>
+      <div><span>Free updates and services until</span><b>${until ? fmtDate(until) : 'Not set yet'}</b><small>${says}</small></div>
+    </div>
+    <div class="subcard__actions">
+      <button class="btn btn--ghost btn--sm" type="button" data-act="support-date">${icon('a-edit')}Change the date</button>
+      <button class="btn btn--ghost btn--sm" type="button" data-act="setup-sub">${icon('a-renew')}Switch to a yearly subscription</button>
+    </div>`;
+}
 
 const TABS = {
   // --- Overview ----------------------------------------------------------------
@@ -460,10 +484,7 @@ const TABS = {
               <ul class="plist">${renewals.map((r) => html`<li><div><b>${money(r.amount, r.currency)}</b>
                 <small>${r.years} year${r.years > 1 ? 's' : ''}: paid until ${fmtDate(r.to_ends_on)} · ${store.member(r.recorded_by)?.full_name || ''}</small></div>
                 <time>${fmtDate(r.paid_on)}</time></li>`)}</ul></details>` : ''}`
-          : html`<div class="subcard__empty">
-              <div><h2>Yearly subscription</h2><p class="small muted">If ${client?.name || 'the client'} pays every year to keep using this, set it up here. The portal tracks when it's due and emails reminders before then.</p></div>
-              <button class="btn btn--primary btn--sm" type="button" data-act="setup-sub">${icon('a-renew')}Set up a yearly subscription</button>
-            </div>`}
+          : oneTimeCard(project)}
         </section>
         <section class="card money__summary">
           <div><span>Quoted price</span><b>${finances ? money(quote, currency) : '—'}</b></div>
@@ -493,6 +514,16 @@ const TABS = {
       quote: async () => { if (await quoteModal(ctx, project, finances)) render(ctx); },
       pay: async () => { if (await paymentModal(ctx, { projectId: project.id, currency })) render(ctx); },
       'setup-sub': async () => { if (await subscriptionModal(ctx, project)) render(ctx); },
+      'support-date': async () => {
+        const saved = await modal({
+          title: 'Free updates and services',
+          submitLabel: 'Save',
+          body: html`<label class="field"><span>Free until</span><input class="input" type="date" name="support_until" value="${project.support_until || ''}"></label>
+            <small class="field__hint">A one-time purchase gets free updates and services for 2 months after it goes live. After this day they're charged separately. The client sees this date on their Contact Zenatiq page.</small>`,
+          onSubmit: async (fd) => db.projects.update(project.id, { support_until: val(fd, 'support_until') }),
+        });
+        if (saved) { toast('Date saved'); render(ctx); }
+      },
       'edit-sub': async () => { if (await subscriptionModal(ctx, project, sub)) render(ctx); },
       renew: async () => { if (await renewModal(ctx, project, sub)) render(ctx); },
       'copy-renew': () => copyText(sub.renew_url, 'Renewal link copied. Send it to the client to pay online or by bank transfer.'),
@@ -531,34 +562,13 @@ const TABS = {
     return view === 'portal' ? portalActivity(ctx, box, project) : commitLog(ctx, box, project);
   },
 
-  // --- Widget code, and the licence check for systems on a yearly subscription ----------------
+  // --- Widget: the prompt that sets up a client system (licence check and Contact Zenatiq page), and the key ---
   async connect(ctx, panel, project) {
     const { db, demo, isAdmin, store } = ctx;
     const sub = isAdmin ? (await db.subscriptions.get(project.id)).subscription : null;
     if (!ctx.isCurrent()) return;
     const prompt = setupPrompt({ project, client: store.client(project.client_id), sub, isAdmin });
-    const snippet = `<!-- Contact with Zenatiq -->\n<script src="${SITE}/connect/widget.js" data-key="${project.connect_key}" defer></script>`;
-    const inline = `<div id="zenatiq-connect"></div>\n<script src="${SITE}/connect/widget.js" data-key="${project.connect_key}" data-mode="inline" defer></script>`;
     const pageLink = `${SITE}/connect/?key=${project.connect_key}`;
-    const licenseKey = `ZENATIQ_KEY=${project.connect_key}`;
-    const licenseServer = [
-      "import { createLicense } from './zenatiq-license.mjs';",
-      '',
-      "const license = createLicense({ key: process.env.ZENATIQ_KEY, file: '.zenatiq-license.json' });",
-      'await license.start(); // checks now, then once a day',
-      "app.use(license.readOnlyGuard({ allow: ['/api/login', '/api/logout'] }));",
-      "app.get('/api/license', (req, res) => res.json(license.state()));",
-    ].join('\n');
-    const licenseBanner = [
-      "fetch('/api/license').then((r) => r.json()).then((s) => {",
-      '  if (!s.message) return;',
-      "  const bar = document.createElement('div');",
-      "  bar.style.cssText = 'position:sticky;top:0;z-index:9999;padding:10px 16px;background:#b3261e;color:#fff;font:14px sans-serif;text-align:center';",
-      "  bar.textContent = s.message + ' ';",
-      "  if (s.renewUrl) bar.append(Object.assign(document.createElement('a'), { href: s.renewUrl, target: '_blank', textContent: 'Renew now', style: 'color:#fff;font-weight:bold' }));",
-      '  document.body.prepend(bar);',
-      '});',
-    ].join('\n');
     // What the licence says today, for owners and admins (members can't see subscriptions).
     const LICENSE_SAYS = {
       active: 'The system works normally.',
@@ -567,76 +577,55 @@ const TABS = {
       expired: 'The system is read-only until the client renews.',
       cancelled: 'Cancelled: the system goes read-only once its paid days and grace days run out.',
     };
-    const licenseStatus = !isAdmin ? '' : sub
-      ? html`<p class="licence__status ${{ active: 'is-on', grace: 'is-due', expired: 'is-due' }[sub.status] || ''}">${icon(sub.status === 'active' ? 'check' : 'clock')}<span>
-          <b>${sub.package}</b>, paid until ${fmtDate(sub.ends_on)}. ${LICENSE_SAYS[sub.status] || ''}</span></p>`
-      : html`<p class="licence__status">${icon('clock')}<span>No yearly subscription yet, so the licence counts this project as a one-time purchase and the system never goes read-only.
-          <a href="#/projects/${project.id}/payments">Set one up on the Payments tab</a>.</span></p>`;
+    const yearly = project.billing === 'yearly';
+    const licenseStatus = !yearly
+      ? html`<p class="licence__status">${icon('clock')}<span>Package: <b>one-time purchase</b>, ${project.support_until
+          ? `free updates and services until ${fmtDate(project.support_until)}` : 'free updates and services for 2 months after it goes live'}.
+          No licence check or renewal: there's nothing to renew.${isAdmin ? html` <a href="#/projects/${project.id}/payments">Change it on the Payments tab</a>.` : ''}</span></p>`
+      : isAdmin && sub
+        ? html`<p class="licence__status ${{ active: 'is-on', grace: 'is-due', expired: 'is-due' }[sub.status] || ''}">${icon(sub.status === 'active' ? 'check' : 'clock')}<span>
+            Licence: <b>${sub.package}</b>, paid until ${fmtDate(sub.ends_on)}. ${LICENSE_SAYS[sub.status] || ''}</span></p>`
+        : html`<p class="licence__status">${icon('check')}<span>Package: <b>yearly subscription</b>, with the licence check.</span></p>`;
     mount(panel, html`
       <div class="connect">
-        <div class="connect__main">
         <section class="card prompt" id="prompt">
           <header class="card__head"><h2>Prompt for an AI assistant</h2>
             <button class="btn btn--primary btn--sm" type="button" data-act="copy" data-what="setupPrompt">${icon('copy')}Copy the prompt</button></header>
-          <p>Paste this into Claude Code, or another AI coding assistant, working in <b>${project.name}</b>'s code. It adds the licence check and the renewal banner, plus a <b>Contact Zenatiq</b> section, last in the menu, with the subscription details and the messages with Zenatiq. This project's details are already filled in.</p>
-          <details class="prompt__body"><summary>Show the prompt</summary><div class="code"><pre>${prompt}</pre></div></details>
-          <p class="hint">It contains this project's key, so paste it only into tools you trust. Afterwards, set <code>ZENATIQ_KEY</code> on the system's host for Production. The steps below do the same by hand.</p>
-        </section>
-        <section class="card">
-          <header class="card__head"><h2>Contact with Zenatiq</h2>
-            <label class="switch"><input type="checkbox" data-change="toggle" ${project.connect_enabled ? 'checked' : ''}><span>${project.connect_enabled ? 'On' : 'Off'}</span></label></header>
-          <p>Put this in <b>${project.name}</b>'s admin panel. The client can then report bugs, ask for updates and read your replies, and everything lands in your inbox here.</p>
-          <ol class="steps-sm">
-            <li><b>Floating button</b> (recommended). Paste before <code>&lt;/body&gt;</code> on the admin panel's pages:</li>
-          </ol>
-          <div class="code"><pre>${snippet}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="snippet">${icon('copy')}Copy</button></div>
-          <ol class="steps-sm" start="2"><li><b>Inside a page</b>, for example a "Support" page in their admin panel:</li></ol>
-          <div class="code"><pre>${inline}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="inline">${icon('copy')}Copy</button></div>
-          <ol class="steps-sm" start="3"><li><b>A link</b>, for systems where you can't add code (for example Odoo), as a menu item or bookmark:</li></ol>
-          <div class="code"><pre>${pageLink}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="link">${icon('copy')}Copy</button></div>
-          <p class="hint">React apps: put the script tag in <code>index.html</code>. The key only works for this project, so keep it inside the client's logged-in admin area.</p>
-        </section>
-        <section class="card licence" id="licence">
-          <header class="card__head"><h2>Licence check</h2>${sub ? pill('sub', sub.status) : ''}</header>
-          <p>For a system on a yearly subscription, such as a POS. Its server asks Zenatiq once a day whether the subscription is paid, shows a banner when renewal is due, and goes read-only once the grace days run out. Staff can still sign in, look things up and export their data.</p>
+          <p>Paste this into Claude Code, or another AI coding assistant, working in <b>${project.name}</b>'s code. ${yearly
+            ? html`It adds a <b>Contact Zenatiq</b> page, last in the system's menu, with the subscription details, what the package includes and the message center, plus the licence check and the renewal banner.`
+            : html`It adds a <b>Contact Zenatiq</b> page, last in the system's menu, with the one-time package, what it includes and the message center, without any licence check or renewal buttons.`}
+            This project's details are already filled in.</p>
           ${licenseStatus}
-          <ol class="steps-sm">
-            <li><b>Download the licence check</b> and put it in the system's server folder. It needs Node.js 18 or newer, and nothing else.</li>
-          </ol>
-          <a class="btn btn--ghost btn--sm" href="${SITE}/license/zenatiq-license.mjs" download="zenatiq-license.mjs">Download zenatiq-license.mjs</a>
-          <ol class="steps-sm" start="2"><li><b>Add this project's key</b> to the server's settings, in its <code>.env</code> file or its hosting settings:</li></ol>
-          <div class="code"><pre>${licenseKey}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="licenseKey">${icon('copy')}Copy</button></div>
-          <ol class="steps-sm" start="3"><li><b>Add the check</b> to the server's main file (Express). Change the two paths to the system's own sign-in and sign-out addresses:</li></ol>
-          <div class="code"><pre>${licenseServer}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="licenseServer">${icon('copy')}Copy</button></div>
-          <ol class="steps-sm" start="4"><li><b>Show the banner</b> in the admin panel. Skip this if the floating Contact with Zenatiq button is there: it already shows one.</li></ol>
-          <div class="code"><pre>${licenseBanner}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="licenseBanner">${icon('copy')}Copy</button></div>
-          <p class="hint">While the system is read-only, saving anything gets a <code>402</code> reply: show its <code>error.message</code> to the user. Add <code>.zenatiq-license.json</code> to <code>.gitignore</code>. On Vercel, leave out <code>file</code> and the <code>await license.start()</code> line: the guard then checks with the first request (Vercel can pause a server while it loads, which freezes a check started then). A system without its own Node.js server, such as a React app that talks straight to Firebase, can't run the check: the floating Contact with Zenatiq button still shows renewal banners there.</p>
+          <details class="prompt__body"><summary>Show the prompt</summary><div class="code"><pre>${prompt}</pre></div></details>
+          <p class="hint">It contains this project's key, so paste it only into tools you trust. Afterwards, set <code>ZENATIQ_KEY</code> on the system's host for Production.</p>
         </section>
-        </div>
         <aside class="ov__side">
+          <section class="card projkey">
+            <header class="card__head"><h2>Project key</h2>
+              <label class="switch" title="Messages from ${project.name}'s system"><input type="checkbox" data-change="toggle" ${project.connect_enabled ? 'checked' : ''}><span>${project.connect_enabled ? 'On' : 'Off'}</span></label></header>
+            <p class="small muted">Set it as <code>ZENATIQ_KEY</code> on the system's server. The Contact Zenatiq page uses it${yearly ? ', and so does the licence check' : ''}.</p>
+            <div class="code"><pre>${project.connect_key}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="key">${icon('copy')}Copy</button></div>
+            <p class="small muted">The switch turns the message center on or off for this project; the licence check keeps working either way. If the key ends up somewhere public, make a new one: the old one stops working straight away, until the new one is in the system's settings.</p>
+            <button class="btn btn--danger-ghost btn--sm" type="button" data-act="rekey">${icon('a-key')}Make a new key</button>
+          </section>
           <section class="card">
             <h2>See what the client sees</h2>
             ${demo ? html`<p class="small muted">In demo mode you can send a pretend client message to try the inbox.</p>
               <button class="btn btn--primary btn--sm" type="button" data-act="simulate">${icon('i-chat')}Send a test client message</button>`
-            : html`<p class="small muted">Opens the client's view in a new tab. Messages you send there arrive as real client messages.</p>
+            : html`<p class="small muted">Opens the message center in a new tab, as the client sees it. Messages you send there arrive as real client messages.</p>
               <a class="btn btn--primary btn--sm" href="${pageLink}" target="_blank" rel="noopener">${icon('external')}Open the client view</a>`}
-          </section>
-          <section class="card">
-            <h2>Key</h2>
-            <p class="small muted">If the key ends up somewhere public, make a new one. The old code stops working straight away, and so does the licence check until the new key is in the system's settings.</p>
-            <button class="btn btn--danger-ghost btn--sm" type="button" data-act="rekey">${icon('a-key')}Make a new key</button>
           </section>
         </aside>
       </div>`, {
-      copy: (btn) => copyText({ snippet, inline, link: pageLink, licenseKey, licenseServer, licenseBanner, setupPrompt: prompt }[btn.dataset.what], 'Copied'),
+      copy: (btn) => copyText({ key: project.connect_key, setupPrompt: prompt }[btn.dataset.what], 'Copied'),
       toggle: async (box) => {
-        try { await db.projects.update(project.id, { connect_enabled: box.checked }); toast(box.checked ? 'Contact with Zenatiq is on' : 'Contact with Zenatiq is off'); render(ctx); }
+        try { await db.projects.update(project.id, { connect_enabled: box.checked }); toast(box.checked ? 'The message center is on' : 'The message center is off'); render(ctx); }
         catch (err) { toast(friendly(err), 'error'); box.checked = !box.checked; }
       },
       rekey: async () => {
-        const ok = await confirmDialog({ title: 'Make a new key?', message: `The widget already on ${project.name}'s admin panel stops working until you paste the new code there.`, confirmLabel: 'Make a new key' });
+        const ok = await confirmDialog({ title: 'Make a new key?', message: `${project.name}'s message center and licence check stop working until the new key is set as ZENATIQ_KEY on its server.`, confirmLabel: 'Make a new key' });
         if (!ok) return;
-        try { await db.projects.newKey(project.id); toast('New key made. Update the code on the client\'s site.'); render(ctx); }
+        try { await db.projects.newKey(project.id); toast('New key made. Set it as ZENATIQ_KEY on the client\'s server.'); render(ctx); }
         catch (err) { toast(friendly(err), 'error'); }
       },
       simulate: async () => {

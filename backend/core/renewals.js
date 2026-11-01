@@ -26,6 +26,12 @@ export function addYears(day, n) {
   const daysInMonth = new Date(Date.UTC(y + n, m, 0)).getUTCDate();
   return fromUTC(Date.UTC(y + n, m - 1, Math.min(d, daysInMonth)));
 }
+// The same date n months later; the 31st becomes the month's last day in shorter months.
+export function addMonths(day, n) {
+  const [y, m, d] = day.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(y, m - 1 + n + 1, 0)).getUTCDate();
+  return fromUTC(Date.UTC(y, m - 1 + n, Math.min(d, daysInMonth)));
+}
 export const daysBetween = (from, to) => Math.round((toUTC(to) - toUTC(from)) / 864e5);
 // The last paid day of a period that starts on `starts` and lasts `years` years.
 export const periodEnd = (starts, years = 1) => addDays(addYears(starts, years), -1);

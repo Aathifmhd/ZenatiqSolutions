@@ -153,9 +153,10 @@ export function projectModal(ctx, project = null) {
         <fieldset class="billing">
           <legend>How does the client pay?</legend>
           <div class="billing__choices">
-            <label class="choice"><input type="radio" name="billing" value="one_time" checked><span><b>One-time purchase</b><small>They pay for the build once.</small></span></label>
-            <label class="choice"><input type="radio" name="billing" value="yearly"><span><b>Yearly subscription</b><small>They pay every year to keep using it.</small></span></label>
+            <label class="choice"><input type="radio" name="billing" value="one_time" checked><span><b>One-time purchase</b><small>They pay for the build once. Free updates and services for 2 months after it goes live.</small></span></label>
+            <label class="choice"><input type="radio" name="billing" value="yearly"><span><b>Yearly subscription</b><small>They pay every year. All services and small updates while it's paid.</small></span></label>
           </div>
+          <small class="field__hint" data-one-time>The 2 free months start when the stage changes to Live; you can change the end date on the Payments tab. After that, services are charged separately.</small>
           <div class="field-row" data-yearly hidden>
             <label class="field"><span>Package</span><input class="input" name="sub_package" maxlength="120" placeholder="e.g. POS Business"></label>
             <label class="field"><span>Yearly price (LKR)</span><input class="input" name="sub_price" inputmode="decimal" placeholder="e.g. 25000"></label>
@@ -174,6 +175,7 @@ export function projectModal(ctx, project = null) {
       form.querySelectorAll('[name=billing]').forEach((radio) => radio.addEventListener('change', () => {
         const yearly = form.elements.billing.value === 'yearly';
         form.querySelectorAll('[data-yearly]').forEach((el) => { el.hidden = !yearly; });
+        form.querySelectorAll('[data-one-time]').forEach((el) => { el.hidden = yearly; });
         form.elements.sub_package.required = yearly;
         form.elements.sub_price.required = yearly;
       }));
@@ -197,7 +199,7 @@ export function projectModal(ctx, project = null) {
         name: val(fd, 'name'), client_id: clientId, type: val(fd, 'type'), status: val(fd, 'status'),
         start_date: val(fd, 'start_date'), due_date: val(fd, 'due_date'), description: val(fd, 'description'), ...urls,
       };
-      const saved = project ? await db.projects.update(project.id, row) : await db.projects.add(row);
+      const saved = project ? await db.projects.update(project.id, row) : await db.projects.add({ ...row, billing: yearly ? 'yearly' : 'one_time' });
       if (yearly) {
         await db.subscriptions.set(saved.id, { package: val(fd, 'sub_package'), price: yearlyPrice, currency: 'LKR', starts_on: row.start_date || today() });
       }

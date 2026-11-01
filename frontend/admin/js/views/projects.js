@@ -6,15 +6,16 @@ import {
 import { projectModal } from './parts.js';
 
 export async function render(ctx) {
-  const { el, db, store, isAdmin } = ctx;
+  const { el, db, store } = ctx;
   ctx.title = 'Projects';
   await store.load();
-  const [assignments, tasks, threads, subs] = await Promise.all([
-    db.projects.allMembers(), db.tasks.list(), db.threads.list(), isAdmin ? db.subscriptions.list() : { subscriptions: [] },
-  ]);
+  const [assignments, tasks, threads] = await Promise.all([db.projects.allMembers(), db.tasks.list(), db.threads.list()]);
   if (!ctx.isCurrent()) return;
-  // Projects the client pays for every year (owners and admins see this).
-  const yearly = new Set(subs.subscriptions.filter((s) => s.status !== 'cancelled').map((s) => s.project_id));
+  // How the client pays: every year, or once (with 2 months of free updates and services after going live).
+  const PACKAGE = {
+    yearly: html`<span class="pill is-renewal" title="Paid every year: all services and small updates while it's paid">Yearly</span>`,
+    one_time: html`<span class="pill is-cancelled" title="Paid once: free updates and services for 2 months after it goes live">One-time</span>`,
+  };
 
   const filters = {
     q: recall('zq-projects-q') || '',
@@ -34,7 +35,7 @@ export async function render(ctx) {
         <a class="pcard__link" href="#/projects/${p.id}" aria-label="Open ${p.name}"></a>
         <div class="pcard__top">
           <span class="pcard__icon">${icon(TYPE_ICON[p.type] || 'a-folder')}</span>
-          <span class="pcard__pills">${yearly.has(p.id) ? html`<span class="pill is-renewal" title="Paid every year">Yearly</span>` : ''}${pill('status', p.status)}</span>
+          <span class="pcard__pills">${PACKAGE[p.billing] || ''}${pill('status', p.status)}</span>
         </div>
         <h3>${p.name}</h3>
         <p class="pcard__client">${client?.name || 'No client yet'} · ${LABELS.type[p.type]}</p>

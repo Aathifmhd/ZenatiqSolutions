@@ -11,6 +11,7 @@ import { passwordEmail, renewalEmail } from '../mail.js';
 import { repoFrom } from '../github.js';
 import { payhereStatus } from '../payhere.js';
 import { today, addYears, periodEnd, daysBetween, statusOf, dueReminder, withStatus, renewUrl } from './renewals.js';
+import { PACKAGES, FREE_SUPPORT_MONTHS, freeSupportUntil } from './packages.js';
 
 export class OpError extends Error {
   constructor(message, code = 'invalid', status = 400, extra = undefined) {
@@ -172,7 +173,7 @@ const CLIENT_FIELDS = {
   name: [200, 'Business name', true], contact_name: [120, 'Contact person'], phone: [40, 'Phone'],
   email: [200, 'Email'], address: [300, 'Address'], notes: [5000, 'Notes'],
 };
-const PROJECT_DETAILS = ['name', 'client_id', 'type', 'live_url', 'admin_url', 'repo_url', 'description', 'start_date', 'due_date'];
+const PROJECT_DETAILS = ['name', 'client_id', 'type', 'live_url', 'admin_url', 'repo_url', 'description', 'start_date', 'due_date', 'support_until'];
 
 // --- The admin portal ------------------------------------------------------------------------------
 // mailer sends one email (see mail.js); adding someone or sending a new password uses it.
@@ -270,6 +271,7 @@ export function createPortal(store, { mailer, github } = {}) {
     set('description', (v) => text(v, 5000, 'Notes'));
     set('start_date', (v) => day(v, 'Start date'));
     set('due_date', (v) => day(v, 'Due date'));
+    set('support_until', (v) => day(v, 'Free updates and services until'));
     if (creating || has(r, 'client_id')) out.client_id = await optionalRef('clients', r.client_id, 'That client');
     if (!creating && has(r, 'connect_enabled')) out.connect_enabled = flag(r.connect_enabled, 'Contact with Zenatiq');
     return out;
@@ -291,10 +293,16 @@ export function createPortal(store, { mailer, github } = {}) {
   const ops = {
     // Lists almost every page needs.
     async load() {
-      const [team, clients, projects] = await Promise.all([
-        find('team_members'), find('clients'), find('projects', {}, { sort: { updated_at: -1 } }),
+      const [team, clients, projects, subs] = await Promise.all([
+        find('team_members'), find('clients'), find('projects', {}, { sort: { updated_at: -1 } }), find('subscriptions'),
       ]);
-      return { team: team.sort(byName('full_name')), clients: clients.sort(byName('name')), projects };
+      // Each project's package: yearly with a subscription, otherwise a one-time purchase. Everyone may
+      // see which; the subscription itself (its price and dates) stays with owners and admins.
+      const yearly = new Set(subs.map((s) => s.project_id));
+      return {
+        team: team.sort(byName('full_name')), clients: clients.sort(byName('name')),
+        projects: projects.map((p) => ({ ...p, billing: yearly.has(p.id) ? 'yearly' : 'one_time' })),
+      };
     },
 
     // --- Team ---
@@ -411,6 +419,8 @@ export function createPortal(store, { mailer, github } = {}) {
     },
     async 'projects.add'(me, { row }) {
       const fields = await projectFields(obj(row), true);
+      // Already live as a one-time purchase: its free updates and services start today.
+      if (fields.status === 'live' && !fields.support_until && obj(row).billing !== 'yearly') fields.support_until = freeSupportUntil(today());
       const t = now();
       const doc = { id: uuid(), ...fields, connect_key: newConnectKey(), connect_enabled: true, created_at: t, updated_at: t };
       await col('projects').insertOne(doc);
@@ -420,6 +430,11 @@ export function createPortal(store, { mailer, github } = {}) {
     async 'projects.update'(me, { id, patch }) {
       const old = await need('projects', id, 'That project');
       const fields = await projectFields(obj(patch), false);
+      // A one-time purchase going live: its free updates and services run for FREE_SUPPORT_MONTHS from today.
+      if (fields.status === 'live' && old.status !== 'live' && !old.support_until && !fields.support_until
+        && !(await one('subscriptions', { project_id: old.id }))) {
+        fields.support_until = freeSupportUntil(today());
+      }
       const next = { ...old, ...fields, updated_at: now() };
       await col('projects').updateOne({ id: old.id }, { $set: { ...fields, updated_at: next.updated_at } });
       if (next.status !== old.status) {
@@ -853,6 +868,25 @@ export function createConnect(store) {
     },
     // The yearly subscription, for the widget's Subscription tab and renewal banner. Null for a
     // one-time purchase, or once it's cancelled and past its paid days.
+    // What the client's package includes, for the Contact Zenatiq page in their system: a yearly
+    // subscription, or a one-time purchase with free updates and services until support_until.
+    async package(project) {
+      const sub = await ensureRenewToken(store, await one('subscriptions', { project_id: project.id }));
+      if (sub) {
+        const shown = withStatus(sub);
+        return {
+          type: 'yearly', name: PACKAGES.yearly.name, services: PACKAGES.yearly.services,
+          subscription: {
+            package: sub.package, price: sub.price, currency: sub.currency, paid_until: sub.ends_on, grace_days: sub.grace_days,
+            status: shown.status, days_left: shown.days_left, renew_url: shown.renew_url,
+          },
+        };
+      }
+      return {
+        type: 'one_time', name: PACKAGES.one_time.name, services: PACKAGES.one_time.services, free_months: FREE_SUPPORT_MONTHS,
+        support_until: project.support_until ?? null, support_days_left: project.support_until ? daysBetween(today(), project.support_until) : null,
+      };
+    },
     async subscription(project) {
       const sub = await ensureRenewToken(store, await one('subscriptions', { project_id: project.id }));
       if (!sub) return null;

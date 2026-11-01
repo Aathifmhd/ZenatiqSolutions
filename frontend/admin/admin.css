@@ -433,11 +433,9 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
 
 /* ---------- widget tab ---------- */
 .connect{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(260px,1fr);gap:16px;align-items:start}
-.connect__main{display:grid;gap:16px;min-width:0}
-.licence__status{margin-bottom:4px}
+.licence__status{margin-bottom:12px}
 .connect p{margin-bottom:12px}
 .connect h2{margin-bottom:8px}
-.steps-sm{margin:16px 0 8px;padding-left:20px;list-style:decimal}
 .code{position:relative;margin-bottom:6px;border-radius:12px;background:var(--ink-2);color:#e9e6e1}
 .code pre{margin:0;padding:14px 16px;padding-right:96px;overflow-x:auto;font:500 .82rem/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-all}
 .code .btn{position:absolute;top:8px;right:8px}
