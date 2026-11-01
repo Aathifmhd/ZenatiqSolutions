@@ -203,6 +203,42 @@ test('the read-only guard refuses changes, lets reading and signing in through, 
   assert.equal(await through('POST', '/sales'), 'next', 'it asked Zenatiq again, and the renewal counts');
   assert.equal(license.state().status, 'active');
 });
+test('a failed check says why, and the next request after 10 minutes tries again (servers without timers)', async () => {
+  let clock = Date.now();
+  let fail = Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+  const license = createLicense({
+    key: pos.connect_key, url: `${base}/api/license`, publicKey: keys.publicKey, now: () => clock,
+    fetch: (url, options) => (fail ? Promise.reject(fail) : fetch(url, options)),
+  });
+  assert.match((await license.refresh()).message, /^Couldn't reach Zenatiq to check the licence \(no answer in time\)\. The system keeps/);
+  fail = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+  clock += 11 * 60e3;
+  assert.match((await license.refresh()).message, /\(ECONNREFUSED\)/);
+
+  fail = null;
+  const guard = license.readOnlyGuard();
+  const get = () => new Promise((resolve) => guard({ method: 'GET', path: '/' }, {}, resolve));
+  await get();
+  assert.equal(license.state().verified, false, 'not straight after the last try');
+  clock += 11 * 60e3;
+  await get();
+  assert.ok(license.state().verified, 'the next request after 10 minutes asked again, and got the licence');
+  const checked = clock;
+  clock += 2 * 60 * 60e3;
+  await get();
+  assert.equal(license.state().verified, true);
+  clock = checked + 864e5 + 60e3;
+  let asked = false;
+  const counted = createLicense({ key: pos.connect_key, url: `${base}/api/license`, publicKey: keys.publicKey, now: () => clock, fetch: (url, options) => { asked = true; return fetch(url, options); } });
+  await counted.refresh();
+  asked = false;
+  const counting = counted.readOnlyGuard();
+  await new Promise((resolve) => counting({ method: 'GET', path: '/' }, {}, resolve));
+  assert.equal(asked, false, 'a working licence is only asked for again after a day');
+  clock += 864e5;
+  await new Promise((resolve) => counting({ method: 'GET', path: '/' }, {}, resolve));
+  assert.equal(asked, true, 'and then on the next request, even without the daily timer');
+});
 
 // --- The renewal page --------------------------------------------------------------------------------
 test('the renewal page shows what is due, the bank details, and the years to choose from', async () => {

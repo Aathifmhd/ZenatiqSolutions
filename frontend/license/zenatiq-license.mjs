@@ -11,7 +11,8 @@
  *   import { createLicense } from './zenatiq-license.mjs';
  *   const license = createLicense({ key: process.env.ZENATIQ_KEY, file: '.zenatiq-license.json' });
  *   await license.start();                    // checks now, then once a day
- *   app.use(license.readOnlyGuard({ allow: ['/login', '/logout'] }));  // Express: no changes when read-only
+ *   app.use(license.readOnlyGuard({ allow: ['/login', '/logout'] }));  // Express: no changes when read-only,
+ *                                             // and checks again when due (a failed check: 10 minutes later)
  *   license.state();                          // { status, readOnly, message, renewUrl, ... } for banners
  *   await license.refresh();                  // checks again now, for example when someone signs in
  *
@@ -24,7 +25,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 export const ZENATIQ_PUBLIC_KEY = 'MCowBQYDK2VwAyEA54ujyCWNnSk8RaY3slPCYb3FxdmiIO8gpYa0wcw7DdM=';
 const LICENSE_URL = 'https://www.zenatiqsolutions.com/api/license';
 const DAY = 864e5;
-const RECHECK = 10 * 60e3; // while read-only, ask again before refusing a change, at most this often
+const RECHECK = 10 * 60e3; // after a failed check, or while read-only, ask again at most this often
 
 // The licence inside a signed licence, or null if Zenatiq's signature doesn't match.
 export function readLicense(token, publicKey = ZENATIQ_PUBLIC_KEY) {
@@ -86,8 +87,10 @@ export function createLicense({
       } else {
         problem = json?.error?.message || (res.ok ? "Zenatiq's signature didn't match" : `Zenatiq answered ${res.status}`);
       }
-    } catch {
-      problem = "Couldn't reach Zenatiq to check the licence";
+    } catch (err) {
+      // Why, so whoever looks after the system can tell no answer in time from no connection at all.
+      const why = ['TimeoutError', 'AbortError'].includes(err?.name) ? 'no answer in time' : err?.cause?.code || err?.code || '';
+      problem = `Couldn't reach Zenatiq to check the licence${why ? ` (${why})` : ''}`;
     }
     // Saved after every check, even one that failed, so the latest time seen survives a restart.
     const current = state();
@@ -119,11 +122,18 @@ export function createLicense({
     };
   }
 
+  // Whether it's time to ask Zenatiq again: a day after the last answer, or 10 minutes after a
+  // check that failed. Hosts that pause the server between requests (such as Vercel) don't run the
+  // daily timer, so the guard asks when the server is next used.
+  const due = () => !pending && now() - lastTry >= RECHECK && (!saved || Boolean(problem) || now() - saved.checkedAt >= every);
+
   // Express (or Connect) middleware: while read-only, anything but reading is refused with 402.
   // Before refusing, it asks Zenatiq again (at most every 10 minutes), so a renewal switches the
-  // system back on straight away. allow: paths that must keep working, such as signing in and out.
+  // system back on straight away. It also makes the check when one is due (see due).
+  // allow: paths that must keep working, such as signing in and out.
   function readOnlyGuard({ allow = [] } = {}) {
     return async (req, res, next) => {
+      if (due()) await refresh();
       const path = req.path || String(req.url || '').split('?')[0];
       if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || allow.some((p) => path.startsWith(p))) return next();
       let s = state();
