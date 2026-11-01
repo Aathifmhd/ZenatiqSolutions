@@ -104,6 +104,24 @@ export const money = {
   removePayment: (id) => call('money.removePayment', { id }),
 };
 
+// ZenPOS Key Maker (owners and admins): licences for ZenPOS, one shop computer each.
+export const zenpos = {
+  list: () => call('zenpos.list'),
+  get: (id) => call('zenpos.get', { id }),
+  key: (id) => call('zenpos.key', { id }),
+  findKey: (key) => call('zenpos.findKey', { key }),
+  create: (row, { paid = null, requestId = null } = {}) => call('zenpos.create', { row, paid, requestId }),
+  update: (id, patch) => call('zenpos.update', { id, patch }),
+  renew: (id, { amount, method, reference, paid_on }) => call('zenpos.renew', { id, amount, method, reference, paid_on }),
+  move: (id, device) => call('zenpos.move', { id, device }),
+  offlineCode: (id, device) => call('zenpos.offlineCode', { id, device }),
+  cancel: (id, cancelled) => call('zenpos.cancel', { id, cancelled }),
+  slip: (id) => call('zenpos.slip', { id }),
+  approveSlip: (id, { amount, reference } = {}) => call('zenpos.approveSlip', { id, amount, reference }),
+  rejectSlip: (id, reason) => call('zenpos.rejectSlip', { id, reason }),
+  dismissRequest: (id) => call('zenpos.dismissRequest', { id }),
+};
+
 // Yearly subscriptions and renewals (owners and admins).
 export const subscriptions = {
   list: () => call('subscriptions.list'),

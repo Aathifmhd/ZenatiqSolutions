@@ -7,11 +7,13 @@
 // findOne, insertOne, updateOne(filter, { $set }, { upsert }), updateMany, deleteOne, deleteMany and
 // countDocuments. Filters use plain values, $in, $ne, $lt, $lte, $gt and $gte.
 import { savePassword, temporaryPassword } from '../passwords.js';
-import { passwordEmail, renewalEmail } from '../mail.js';
+import { passwordEmail, renewalEmail, zenposReceiptEmail, zenposReminderEmail, zenposDigestEmail } from '../mail.js';
+import { signLicense } from '../license.js';
 import { repoFrom } from '../github.js';
 import { payhereStatus } from '../payhere.js';
 import { today, addYears, periodEnd, daysBetween, statusOf, dueReminder, withStatus, renewUrl } from './renewals.js';
 import { PACKAGES, FREE_SUPPORT_MONTHS, freeSupportUntil } from './packages.js';
+import * as zenpos from './zenpos.js';
 
 export class OpError extends Error {
   constructor(message, code = 'invalid', status = 400, extra = undefined) {
@@ -169,6 +171,34 @@ function needAdmin(me) {
   if (!isAdmin(me)) throw forbidden();
 }
 
+// A ZenPOS licence's details (the Key Maker). The dates, key and computer have operations of their own.
+function zenposFields(r, creating) {
+  const out = {};
+  const set = (key, check) => { if (creating || has(r, key)) out[key] = check(r[key]); };
+  set('shop', (v) => text(v, 120, 'Shop name', { required: true }));
+  set('owner', (v) => text(v, 120, "Owner's name", { required: true }));
+  set('phone', (v) => text(v, 40, 'Mobile or WhatsApp', { required: true }));
+  set('email', (v) => {
+    const email = text(v, 200, 'Email')?.toLowerCase() ?? null;
+    if (email && !EMAIL.test(email)) throw new OpError(`${email} doesn't look like an email address.`);
+    return email;
+  });
+  set('address', (v) => text(v, 300, 'Address'));
+  set('notes', (v) => text(v, 2000, 'Notes'));
+  set('price', (v) => (v == null || v === '' ? zenpos.PRICE : amount(v, 'Price', { allowZero: true })));
+  return out;
+}
+// What the Key Maker shows: never the key itself (see zenpos.key), its fingerprint, the history or the
+// reminder bookkeeping. state: active, ending, grace (renewal due), expired (read-only) or cancelled.
+function zenposShown(lic, day = today()) {
+  const { key_hash: _h, key_seal: _s, events: _e, reminders: _r, ...shown } = lic;
+  return {
+    ...shown, key: `ZPOS-…${lic.key_last4}`, state: zenpos.statusOf(lic, day), days_left: daysBetween(day, lic.paid_until),
+    renew_url: zenpos.renewUrlOf(lic),
+  };
+}
+const slipShown = ({ image: _i, ...slip }) => slip;
+
 const CLIENT_FIELDS = {
   name: [200, 'Business name', true], contact_name: [120, 'Contact person'], phone: [40, 'Phone'],
   email: [200, 'Email'], address: [300, 'Address'], notes: [5000, 'Notes'],
@@ -210,6 +240,51 @@ export function createPortal(store, { mailer, github } = {}) {
     return { to, emailed: sent };
   }
 
+  // A ZenPOS receipt by email, when the shop gave an address. It never fails the payment itself.
+  async function zenposReceipt(lic, payment) {
+    if (!lic.email || !mailer) return false;
+    try {
+      return (await mailer(zenposReceiptEmail({ lic, to: lic.email, payment }))).sent;
+    } catch (err) {
+      console.error('A ZenPOS receipt could not be emailed:', err.message);
+      return false;
+    }
+  }
+
+  // ZenPOS reminders due today (30, 7 and 1 days before, and the day after), each once, and the
+  // daily list, for owners and admins, of shops to follow up.
+  async function zenposReminders(day) {
+    const result = { sent: [], failed: [], digest: 0 };
+    if (!mailer) return result;
+    const licences = await find('zenpos_licences', { status: 'active' });
+    for (const lic of licences) {
+      const due = zenpos.dueReminder(lic, day);
+      if (!due) continue;
+      try {
+        await mailer(zenposReminderEmail({ lic, to: lic.email, stage: due.stage, left: due.left, link: zenpos.renewUrlOf(lic) }));
+        await col('zenpos_licences').updateOne({ id: lic.id }, { $set: { reminders: [...(lic.reminders || []).slice(-19), due.key], last_reminded_at: now() } });
+        result.sent.push({ licence: lic.licence_id, shop: lic.shop, to: lic.email, stage: due.stage });
+      } catch (err) {
+        result.failed.push({ licence: lic.licence_id, shop: lic.shop, problem: err.message });
+      }
+    }
+    const follow = licences.map((l) => zenposShown(l, day))
+      .filter((l) => (l.state === 'ending' && l.days_left <= 7) || l.state === 'grace' || (l.state === 'expired' && l.days_left >= -60))
+      .sort((a, b) => a.days_left - b.days_left);
+    if (follow.length) {
+      const team = await find('team_members', { active: true });
+      for (const member of team.filter(isAdmin)) {
+        try {
+          await mailer(zenposDigestEmail({ to: member.email, rows: follow, day }));
+          result.digest += 1;
+        } catch (err) {
+          result.failed.push({ licence: 'daily list', shop: member.email, problem: err.message });
+        }
+      }
+    }
+    return result;
+  }
+
   // Every renewal reminder due today (see renewals.js). Each one goes once, so running this
   // again on the same day sends nothing new. Without me, it's Vercel's daily job.
   async function sendDueReminders(me = null) {
@@ -226,6 +301,8 @@ export function createPortal(store, { mailer, github } = {}) {
         result.failed.push({ project: project.name, problem: err.message });
       }
     }
+    // Vercel's daily run also sends the ZenPOS reminders ("Send today's reminders now" doesn't).
+    if (!me) result.zenpos = await zenposReminders(day);
     await col('jobs').updateOne({ id: 'renewal-reminders' }, {
       $set: { last_run_at: now(), last_day: day, sent: result.sent.length, failed: result.failed.length, ...(me ? {} : { last_auto_run_at: now() }) },
     }, { upsert: true });
@@ -804,6 +881,181 @@ export function createPortal(store, { mailer, github } = {}) {
       const n = Number(page);
       if (!Number.isInteger(n) || n < 1 || n > 2000) throw new OpError('Page must be a whole number.');
       return github.commits(repo, { branch: text(branch, 250, 'Branch'), page: n });
+    },
+
+    // --- ZenPOS Key Maker (owners and admins) ------------------------------------------------------
+    // Every licence, with the requests from the Buy ZenPOS page and the bank slips waiting to be checked.
+    async 'zenpos.list'(me) {
+      needAdmin(me);
+      const day = today();
+      const [licences, requests, slips] = await Promise.all([
+        find('zenpos_licences', {}, { sort: { created_at: -1 } }),
+        find('zenpos_requests', { status: 'new' }, { sort: { created_at: -1 } }),
+        find('zenpos_slips', { status: 'pending' }, { sort: { created_at: -1 } }),
+      ]);
+      return { today: day, licences: licences.map((l) => zenposShown(l, day)), requests, slips: slips.map(slipShown) };
+    },
+    async 'zenpos.get'(me, { id }) {
+      needAdmin(me);
+      const lic = await need('zenpos_licences', id, 'That licence');
+      const [payments, slips] = await Promise.all([
+        find('zenpos_payments', { licence: lic.id }, { sort: { created_at: -1 } }),
+        find('zenpos_slips', { licence: lic.id }, { sort: { created_at: -1 } }),
+      ]);
+      return { licence: zenposShown(lic), events: [...(lic.events || [])].reverse(), payments, slips: slips.map(slipShown) };
+    },
+    // The full key, to copy or send to the shop again.
+    async 'zenpos.key'(me, { id }) {
+      needAdmin(me);
+      const lic = await need('zenpos_licences', id, 'That licence');
+      return { key: zenpos.openKey(lic.key_seal) };
+    },
+    // Finds the licence for a whole key typed into the Key Maker's search.
+    async 'zenpos.findKey'(me, { key }) {
+      needAdmin(me);
+      const normal = zenpos.normalKey(key);
+      const lic = normal ? await one('zenpos_licences', { key_hash: zenpos.keyHash(normal) }) : null;
+      return lic ? lic.id : null;
+    },
+    // A new licence: a new key, paid for a year from the start date. paid: also record that first year's payment.
+    async 'zenpos.create'(me, { row, paid = null, requestId = null }) {
+      needAdmin(me);
+      const r = obj(row);
+      const fields = zenposFields(r, true);
+      const startsOn = day(r.starts_on, 'Start date') || today();
+      const paidUntil = periodEnd(startsOn, 1);
+      const payment = paid ? { method: pick(obj(paid).method, LISTS.method, 'Payment method', 'cash'), reference: text(paid.reference, 120, 'Reference') } : null;
+      const request = requestId ? await need('zenpos_requests', requestId, 'That request') : null;
+      const t = now();
+      let doc;
+      let key;
+      // A licence number and a key nobody else has (the indexes check both).
+      for (let attempt = 0; ; attempt++) {
+        key = zenpos.newKey();
+        const count = await col('zenpos_licences').countDocuments({});
+        doc = {
+          id: uuid(), licence_id: zenpos.newLicenceId(count + 1 + attempt), key_hash: zenpos.keyHash(key), key_seal: zenpos.sealKey(key),
+          key_last4: key.slice(-4), ...fields, package: zenpos.PACKAGE, currency: zenpos.CURRENCY, starts_on: startsOn, paid_until: paidUntil,
+          grace_until: zenpos.graceOf(paidUntil), status: 'active', device: null, bound_at: null, previous_devices: [],
+          last_check_at: null, version: null, reminders: [], renew_token: zenpos.newToken(), request: request?.id ?? null,
+          created_by: me.id, created_at: t, updated_at: t,
+          events: [zenpos.eventOf(me.full_name, 'created', `Created for ${fields.shop}, paid until ${fmtDay(paidUntil)}`)],
+        };
+        try {
+          await col('zenpos_licences').insertOne(doc);
+          break;
+        } catch (err) {
+          if (err?.code !== 11000 || attempt >= 4) throw err;
+        }
+      }
+      if (payment) {
+        await col('zenpos_payments').insertOne({
+          id: uuid(), licence: doc.id, licence_id: doc.licence_id, amount: doc.price, currency: doc.currency, ...payment,
+          paid_on: startsOn, from_paid_until: null, to_paid_until: paidUntil, recorded_by: me.id, recorded_by_label: me.full_name, created_at: t,
+        });
+      }
+      if (request) await col('zenpos_requests').updateOne({ id: request.id }, { $set: { status: 'done', licence: doc.id, done_at: t } });
+      await log(me, null, 'zenpos.created', `Created ZenPOS licence ${doc.licence_id} for ${doc.shop}`, { adminOnly: true });
+      return { licence: zenposShown(doc), key };
+    },
+    async 'zenpos.update'(me, { id, patch }) {
+      needAdmin(me);
+      const lic = await need('zenpos_licences', id, 'That licence');
+      const fields = zenposFields(obj(patch), false);
+      const changes = changedKeys(lic, fields);
+      if (!changes.length) return zenposShown(lic);
+      const next = await zenpos.addEvent(store, lic, zenpos.eventOf(me.full_name, 'updated', `Changed the ${changes.join(', ')}`), fields);
+      await log(me, null, 'zenpos.updated', `Updated ZenPOS licence ${lic.licence_id} (${next.shop})`, { adminOnly: true });
+      return zenposShown(next);
+    },
+    // A year paid for (the renewal rules are in core/zenpos.js), with a receipt by email when there's an address.
+    // email: where the receipt goes, when someone else paid (PayHere's payer); otherwise the shop's address.
+    async 'zenpos.renew'(me, { id, amount: paidAmount, method, reference, paid_on: paidOn, email }) {
+      needAdmin(me);
+      const lic = await need('zenpos_licences', id, 'That licence');
+      const { licence, payment } = await zenpos.renewLicence(store, lic, {
+        amount: paidAmount == null || paidAmount === '' ? lic.price : amount(paidAmount, 'Amount', { allowZero: true }),
+        method: pick(method, LISTS.method, 'Payment method', 'cash'), reference: text(reference, 120, 'Reference'),
+        paidOn: day(paidOn, 'Payment date') || today(), by: me.full_name, byId: me.id,
+      });
+      await log(me, null, 'zenpos.renewed', `Renewed ZenPOS licence ${lic.licence_id} (${lic.shop}) until ${fmtDay(licence.paid_until)}`, { adminOnly: true });
+      const to = typeof email === 'string' && EMAIL.test(email) ? email : licence.email;
+      return { licence: zenposShown(licence), emailed: await zenposReceipt({ ...licence, email: to }, payment) };
+    },
+    // Moves the licence to another computer: the Computer ID the shop sent, or none, so the next
+    // computer that activates gets it. The old computer goes read-only at its next check.
+    async 'zenpos.move'(me, { id, device }) {
+      needAdmin(me);
+      const lic = await need('zenpos_licences', id, 'That licence');
+      const next = device == null || device === '' ? null : zenpos.normalDevice(device);
+      if (device && !next) throw new OpError("That doesn't look like a Computer ID. It looks like ZP-XXXX-XXXX-XXXX, in ZenPOS → Subscription.");
+      if (next && next === lic.device) throw new OpError('The licence is already on that computer.');
+      if (!next && !lic.device) throw new OpError("The licence isn't on any computer yet.");
+      const t = now();
+      const previous = [...(lic.previous_devices || []).filter((d) => d.device !== next), ...(lic.device ? [{ device: lic.device, moved_at: t }] : [])];
+      const summary = `Moved ${lic.device ? `from ${lic.device} ` : ''}to ${next || 'the next computer that activates'}`;
+      const moved = await zenpos.addEvent(store, lic, zenpos.eventOf(me.full_name, 'moved', summary), { device: next, bound_at: next ? t : null, previous_devices: previous });
+      await log(me, null, 'zenpos.moved', `ZenPOS licence ${lic.licence_id} (${lic.shop}): ${summary}`, { adminOnly: true });
+      return zenposShown(moved);
+    },
+    // A signed licence code for a shop without internet, for the Computer ID it sent.
+    async 'zenpos.offlineCode'(me, { id, device }) {
+      needAdmin(me);
+      const lic = await need('zenpos_licences', id, 'That licence');
+      const d = zenpos.normalDevice(device);
+      if (!d) throw new OpError("That doesn't look like a Computer ID. It looks like ZP-XXXX-XXXX-XXXX, in ZenPOS → Subscription.");
+      if (lic.status === 'cancelled') throw new OpError('This licence is cancelled. Restore it first.');
+      if (lic.device && lic.device !== d) throw new OpError(`This licence is on ${lic.device}. Move it to ${d} first.`);
+      const bound = lic.device ? lic : { ...lic, device: d, bound_at: now() };
+      const code = signLicense(zenpos.licenceFor(bound, { key: zenpos.openKey(lic.key_seal) }));
+      await zenpos.addEvent(store, bound, zenpos.eventOf(me.full_name, 'offline_code', `Made an offline licence code for ${d}`), { device: d, bound_at: bound.bound_at });
+      await log(me, null, 'zenpos.offline_code', `Made an offline code for ZenPOS licence ${lic.licence_id} (${lic.shop})`, { adminOnly: true });
+      return { code, device: d };
+    },
+    // Cancels the licence (ZenPOS goes read-only at its next check), or restores it.
+    async 'zenpos.cancel'(me, { id, cancelled = true }) {
+      needAdmin(me);
+      const lic = await need('zenpos_licences', id, 'That licence');
+      const value = flag(cancelled, 'Cancelled');
+      const next = await zenpos.addEvent(store, lic, zenpos.eventOf(me.full_name, value ? 'cancelled' : 'restored', value ? 'Cancelled the licence' : 'Restored the licence'),
+        { status: value ? 'cancelled' : 'active' });
+      await log(me, null, value ? 'zenpos.cancelled' : 'zenpos.restored', `${value ? 'Cancelled' : 'Restored'} ZenPOS licence ${lic.licence_id} (${lic.shop})`, { adminOnly: true });
+      return zenposShown(next);
+    },
+    // A bank slip from the renewal page: its picture, then approve (a year paid) or reject.
+    async 'zenpos.slip'(me, { id }) {
+      needAdmin(me);
+      return (await need('zenpos_slips', id, 'That slip')).image;
+    },
+    async 'zenpos.approveSlip'(me, { id, amount: paidAmount, reference }) {
+      needAdmin(me);
+      const slip = await need('zenpos_slips', id, 'That slip');
+      if (slip.status !== 'pending') throw new OpError('That slip has already been checked.');
+      const lic = await need('zenpos_licences', slip.licence, 'That licence');
+      const { licence, payment } = await zenpos.renewLicence(store, lic, {
+        amount: paidAmount == null || paidAmount === '' ? lic.price : amount(paidAmount, 'Amount', { allowZero: true }),
+        method: 'bank_transfer', reference: text(reference, 120, 'Reference') || slip.reference || `Bank slip ${slip.id.slice(0, 8)}`,
+        paidOn: slip.created_at.slice(0, 10), by: me.full_name, byId: me.id,
+      });
+      await col('zenpos_slips').updateOne({ id: slip.id }, { $set: { status: 'approved', decided_by: me.full_name, decided_at: now(), payment: payment.id } });
+      await log(me, null, 'zenpos.renewed', `Approved a bank slip and renewed ZenPOS licence ${lic.licence_id} (${lic.shop}) until ${fmtDay(licence.paid_until)}`, { adminOnly: true });
+      return { licence: zenposShown(licence), emailed: await zenposReceipt(licence, payment) };
+    },
+    async 'zenpos.rejectSlip'(me, { id, reason }) {
+      needAdmin(me);
+      const slip = await need('zenpos_slips', id, 'That slip');
+      if (slip.status !== 'pending') throw new OpError('That slip has already been checked.');
+      const why = text(reason, 300, 'Reason');
+      await col('zenpos_slips').updateOne({ id: slip.id }, { $set: { status: 'rejected', reason: why, decided_by: me.full_name, decided_at: now() } });
+      const lic = await one('zenpos_licences', { id: slip.licence });
+      if (lic) await zenpos.addEvent(store, lic, zenpos.eventOf(me.full_name, 'slip_rejected', `Rejected a bank slip${why ? `: ${why}` : ''}`));
+      return null;
+    },
+    async 'zenpos.dismissRequest'(me, { id }) {
+      needAdmin(me);
+      const request = await need('zenpos_requests', id, 'That request');
+      await col('zenpos_requests').updateOne({ id: request.id }, { $set: { status: 'dismissed', done_at: now() } });
+      return null;
     },
 
     // What changed recently, for live updates. The window overlaps the last check by 15 seconds

@@ -122,3 +122,57 @@ ${lines.map((line) => `<p>${esc(line)}</p>`).join('\n')}
 </div>`;
   return { to, subject: `Renewed: ${project.name} is paid until ${longDate(until)}`, text, html };
 }
+
+// --- ZenPOS licences (core/zenpos.js) ------------------------------------------------------------
+const zenposHtml = (hello, lines, link) => `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1f;max-width:520px">
+<p>${esc(hello)}</p>
+${lines.map((line) => `<p>${esc(line)}</p>`).join('\n')}
+${link ? `<p style="margin:18px 0"><a href="${esc(link)}" style="display:inline-block;padding:11px 20px;border-radius:999px;background:#e10600;color:#fff;font-weight:bold;text-decoration:none">Renew now</a></p>
+<p style="color:#666">Pay online or by bank transfer. Questions? WhatsApp us at ${WHATSAPP}.</p>` : `<p style="color:#666">Questions? WhatsApp us at ${WHATSAPP}.</p>`}
+<p>Thank you,<br>Zenatiq Solutions</p>
+</div>`;
+
+// A ZenPOS renewal reminder. stage: "before" the paid-until date, or the day after it "ended".
+export function zenposReminderEmail({ lic, to, stage, left, link }) {
+  const until = longDate(lic.paid_until);
+  const when = left === 0 ? 'today' : left === 1 ? 'tomorrow' : `in ${left} days`;
+  const [subject, ...lines] = stage === 'ended'
+    ? [`ZenPOS for ${lic.shop}: your subscription has ended`,
+      `Your ZenPOS subscription for ${lic.shop} was paid until ${until}.`,
+      `ZenPOS keeps working until ${longDate(lic.grace_until)}. Please renew it (${price(lic.price, lic.currency)} a year) before then, or it becomes read-only until it's renewed.`]
+    : [`ZenPOS for ${lic.shop} is paid until ${until}`,
+      `Your ZenPOS subscription for ${lic.shop} is paid until ${until}, which is ${when}.`,
+      `To keep selling without a break, please renew it for another year (${price(lic.price, lic.currency)}). Renewing early adds the new year after the current one.`];
+  const hello = `Hi ${lic.owner || lic.shop},`;
+  const text = [hello, '', ...lines, '', `Renew online or by bank transfer at ${link}`, '', 'Thank you,', 'Zenatiq Solutions'].join('\n');
+  return { to, subject, text, html: zenposHtml(hello, lines, link) };
+}
+
+// The receipt after a ZenPOS year is paid.
+export function zenposReceiptEmail({ lic, to, payment }) {
+  const hello = `Hi ${lic.owner || lic.shop},`;
+  const lines = [
+    `Thank you! We've received your payment of ${price(payment.amount, payment.currency)}.`,
+    `ZenPOS for ${lic.shop} (licence ${lic.licence_id}) is now paid until ${longDate(payment.to_paid_until)}.`,
+    `If ZenPOS still shows the old date, open Subscription and press "Check with Zenatiq now".`,
+    ...(payment.reference ? [`Payment reference: ${payment.reference}`] : []),
+  ];
+  const text = [hello, '', ...lines, '', 'Zenatiq Solutions'].join('\n');
+  return { to, subject: `Renewed: ZenPOS for ${lic.shop} is paid until ${longDate(payment.to_paid_until)}`, text, html: zenposHtml(hello, lines, null) };
+}
+
+// The daily list for the team: ZenPOS shops that are due, in their renewal days, or read-only.
+export function zenposDigestEmail({ to, rows, day }) {
+  const say = { ending: 'ends in', grace: 'renewal due, ended', expired: 'read-only, ended' };
+  const line = (r) => `${r.shop} (${r.licence_id}, ${r.phone}): ${r.state === 'ending'
+    ? `${say.ending} ${r.days_left} day${r.days_left === 1 ? '' : 's'}` : `${say[r.state]} ${-r.days_left} day${r.days_left === -1 ? '' : 's'} ago`}`;
+  const lines = rows.map(line);
+  const subject = `ZenPOS: ${rows.length} shop${rows.length === 1 ? '' : 's'} to follow up (${longDate(day)})`;
+  const text = ['ZenPOS shops due to renew, in their renewal days, or read-only:', '', ...lines.map((l) => `- ${l}`), '', `Open the Key Maker: ${PORTAL}#/zenpos`].join('\n');
+  const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1f;max-width:560px">
+<p>ZenPOS shops due to renew, in their renewal days, or read-only:</p>
+<ul>${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+<p><a href="${PORTAL}#/zenpos">Open the Key Maker</a></p>
+</div>`;
+  return { to, subject, text, html };
+}

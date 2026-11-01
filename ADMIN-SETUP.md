@@ -226,6 +226,28 @@ On Vercel, or any host that pauses the server between requests, leave out `file`
 
 Systems that don't run Node.js can make the same check in any language. `POST https://www.zenatiqsolutions.com/api/license` with `{ "key": "..." }` returns the licence, signed with Ed25519, and `/api/license/key` gives the public key to check it with.
 
+## ZenPOS licences (the Key Maker)
+
+ZenPOS, the point of sale for mobile phone shops, is sold as **ZenPOS Yearly**: LKR 15,000 a year for one shop computer, after a 14-day free trial that ZenPOS counts itself. The **ZenPOS Key Maker** in the sidebar (owners and admins only) makes and looks after its licences. ZenPOS is finished and relies on what this site answers, as set out in the ZenPOS project's `docs/zenatiq-website-zenpos-key-maker-prompt.md`; the rules are in `backend/core/zenpos.js`.
+
+**Selling ZenPOS to a shop**
+1. Choose **New licence**: the shop, owner, mobile, and optionally email and address. The licence gets a number like `ZL-000001` and a key like `ZPOS-7KQ2-M9XD-41TB-PL8C`, and is paid until a year from the start date, less a day, with 14 more days to renew. Tick **Paid now** to record the first year's payment.
+2. Send the key with **Send on WhatsApp**. The shop pastes it in ZenPOS → Subscription → Activate (internet needed once). The first computer that activates keeps the licence; another computer gets "already used on another computer".
+3. New shops can also ask on the public page **https://www.zenatiqsolutions.com/zenpos**. Their requests appear at the top of the Key Maker: **Make a licence** fills in their details.
+
+**On a licence's page**
+- **Record payment / renew**: paid on or before the paid-until date, the new year comes after it; paid later, the year starts on the payment day. A receipt is emailed when the shop has an email address.
+- **Move to another computer**: enter the new Computer ID the shop sent (ZenPOS → Subscription), or leave it empty so the next computer that activates takes it. The old computer becomes read-only at its next check.
+- **Offline licence code**: for a shop without internet. Enter its Computer ID and send the signed code; ZenPOS takes it instead of the key.
+- **Cancel licence**: ZenPOS becomes read-only at its next check. **Restore** undoes it.
+- **Show**, **Copy** or **Send on WhatsApp** the key again, **Copy renewal link**, and **WhatsApp a reminder** when a renewal is due. **History** records who did what.
+
+**Renewals.** ZenPOS's **Renew now** button opens the licence's own renewal page (a secret link, like the subscription renewal pages). The shop pays online with PayHere (once it's set up; see [Online payments](#online-payments-with-payhere)), which renews the licence by itself, or by bank transfer, using the bank details from the Renewals page, with a photo of the slip. Slips wait at the top of the Key Maker: **View**, then **Approve** (it records the payment and renews) or **Reject**.
+
+**Reminders.** Vercel's daily job emails shops that gave an email address 30, 7 and 1 days before the paid-until date and the day after it, and emails owners and admins a list of shops to follow up: ending within 7 days, renewal due, or read-only. There's no automatic WhatsApp or SMS: use **WhatsApp a reminder** on the licence's page.
+
+**Keep `LICENSE_PRIVATE_KEY` as it is.** It signs ZenPOS licences too, and ZenPOS has the matching public key built in. The licence keys are stored encrypted with a secret derived from it, so if it were ever replaced, every ZenPOS key would need replacing as well, along with an update of ZenPOS.
+
 ## GitHub commits in the Activity tab
 
 Open a project, then **Activity → GitHub commits**. You'll see every commit in the project's repository, newest first and grouped by day. Each one shows its message, author, time and a link to it on GitHub. Pick another branch at the top right, and use **Show older commits** to go back to the very first commit.
@@ -286,6 +308,7 @@ Open http://localhost:3000 for the website and http://localhost:3000/admin for t
   - `routes/renew.js` runs the renewal page, and `routes/payhere.js` takes PayHere's payment notices.
   - `routes/license.js` gives client systems their licences, which `license.js` signs.
   - `routes/cron.js` is the daily reminder job.
+  - `routes/zenpos.js` runs the ZenPOS renewal page and the Buy ZenPOS page; ZenPOS's own requests go through `routes/license.js` and `routes/connect.js`. The ZenPOS rules are in `core/zenpos.js`.
   - Every rule about who may do what is in `backend/core/ops.js`.
   - `member.js` is `npm run member`.
 

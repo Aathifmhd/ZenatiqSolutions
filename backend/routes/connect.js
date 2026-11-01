@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import { readJson, send, fail, HttpError } from '../http.js';
 import { createConnect } from '../core/ops.js';
+import { isZenposRequest, answerPackage } from '../core/zenpos.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -25,6 +26,8 @@ export function connectRoutes(api) {
   router.post('/', async (req, res) => {
     if (api.missing().includes('MONGODB_URI')) throw new HttpError('Contact with Zenatiq is not connected yet.', 'not_configured', 503);
     const body = await readJson(req);
+    // ZenPOS asks for its package with its licence key (core/zenpos.js).
+    if (isZenposRequest(body)) return send(res, 200, { data: await answerPackage(await api.store(), body) }, CORS);
     const data = await createConnect(await api.store()).run(body.op, body);
     send(res, 200, { data: data ?? null }, CORS);
   });

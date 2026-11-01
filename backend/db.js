@@ -3,7 +3,7 @@ import { MongoClient } from 'mongodb';
 import { attachDatabasePool } from '@vercel/functions';
 
 // Raise this when the indexes below change; each deployment then creates them once.
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const INDEXES = [
   ['team_members', { id: 1 }, { unique: true }],
   ['team_members', { email: 1 }, { unique: true }],
@@ -43,6 +43,19 @@ const INDEXES = [
   ['orders', { id: 1 }, { unique: true }],
   ['orders', { subscription_id: 1, created_at: -1 }],
   ['settings', { id: 1 }, { unique: true }],
+  // ZenPOS licences (core/zenpos.js)
+  ['zenpos_licences', { id: 1 }, { unique: true }],
+  ['zenpos_licences', { licence_id: 1 }, { unique: true }],
+  ['zenpos_licences', { key_hash: 1 }, { unique: true }],
+  ['zenpos_licences', { renew_token: 1 }, { unique: true }],
+  ['zenpos_payments', { licence: 1, created_at: -1 }],
+  ['zenpos_slips', { id: 1 }, { unique: true }],
+  ['zenpos_slips', { status: 1, created_at: -1 }],
+  ['zenpos_requests', { id: 1 }, { unique: true }],
+  ['zenpos_requests', { status: 1, created_at: -1 }],
+  ['orders', { zenpos_licence: 1, created_at: -1 }],
+  ['license_hits', { ip: 1, at: -1 }],
+  ['license_hits', { at: 1 }, { expireAfterSeconds: 120 }],
 ];
 
 let ready = null;

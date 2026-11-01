@@ -1,6 +1,7 @@
 // PayHere's payment notifications (the notify_url in the renewal page's checkout form).
 // POST /api/payhere/notify  PayHere sends one when a payment succeeds, fails or is cancelled. A
-// successful one renews the subscription straight away, once, and thanks the client by email.
+// successful one renews the subscription (or the ZenPOS licence) straight away, once, and thanks the
+// client by email.
 import { Router } from 'express';
 import { readForm, send, fail, HttpError } from '../http.js';
 import { readNotification } from '../payhere.js';
@@ -38,7 +39,7 @@ export function payhereRoutes(api) {
     const claimed = await orders.updateOne({ id: order.id, ...done }, { $set: { status: 'renewing', payment_id: note.paymentId } });
     if (claimed.modifiedCount) {
       try {
-        await renew(api, store, order, note);
+        await (order.kind === 'zenpos' ? renewZenpos : renew)(api, store, order, note);
       } catch (err) {
         // Not renewed, so the order isn't marked paid, and PayHere's next notification can try again.
         await orders.updateOne({ id: order.id, status: 'renewing' }, { $set: { status: order.status } });
@@ -54,6 +55,15 @@ export function payhereRoutes(api) {
 }
 
 // Records the renewal, marks the order paid, then thanks the client by email.
+// A ZenPOS year paid online: the Key Maker's own renewal, as System, with the receipt to the payer.
+async function renewZenpos(api, store, order, note) {
+  await createPortal(store, { mailer: api.mailer }).run(SYSTEM, 'zenpos.renew', {
+    id: order.zenpos_licence, amount: order.amount, method: 'online', reference: `PayHere ${note.paymentId}`,
+    paid_on: today(), email: order.customer?.email,
+  });
+  await store.col('orders').updateOne({ id: order.id }, { $set: { status: 'paid', paid_at: new Date().toISOString() } });
+}
+
 async function renew(api, store, order, note) {
   const reference = `PayHere ${note.paymentId}`;
   const sub = await createPortal(store, { mailer: api.mailer }).run(SYSTEM, 'subscriptions.renew', {

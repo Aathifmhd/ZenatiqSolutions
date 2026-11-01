@@ -13,7 +13,8 @@ export class HttpError extends Error {
 
 // The JSON body. Vercel parses it into req.body; a plain Node server leaves the stream to read.
 // Text bodies are parsed too: the widget sends text/plain so browsers skip the CORS preflight.
-export async function readJson(req) {
+// max: the largest body accepted, in bytes (the ZenPOS bank slip upload takes a picture).
+export async function readJson(req, { max = MAX_BODY } = {}) {
   let body;
   try {
     body = req.body;
@@ -25,14 +26,14 @@ export async function readJson(req) {
     let size = 0;
     for await (const chunk of req) {
       size += chunk.length;
-      if (size > MAX_BODY) throw new HttpError('The request is too large.', 'too_large', 413);
+      if (size > max) throw new HttpError('The request is too large.', 'too_large', 413);
       chunks.push(chunk);
     }
     body = Buffer.concat(chunks).toString('utf8');
   }
   if (Buffer.isBuffer(body)) body = body.toString('utf8');
   if (typeof body === 'string') {
-    if (body.length > MAX_BODY) throw new HttpError('The request is too large.', 'too_large', 413);
+    if (body.length > max) throw new HttpError('The request is too large.', 'too_large', 413);
     try {
       body = body ? JSON.parse(body) : {};
     } catch {
@@ -58,6 +59,12 @@ export async function readForm(req) {
     text = Buffer.concat(chunks).toString('utf8');
   }
   return Object.fromEntries(new URLSearchParams(text));
+}
+
+// The caller's internet address: Cloudflare and Vercel pass it on in headers.
+export function clientIp(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return String(req.headers['cf-connecting-ip'] || '').trim() || forwarded || req.socket?.remoteAddress || null;
 }
 
 // Portal requests must come from the portal itself: JSON (which other sites can't send without

@@ -16,6 +16,7 @@ import { cronRoutes } from './routes/cron.js';
 import { licenseRoutes } from './routes/license.js';
 import { renewRoutes } from './routes/renew.js';
 import { payhereRoutes } from './routes/payhere.js';
+import { zenposRoutes } from './routes/zenpos.js';
 
 // The live site passes no options. The local server and the tests use:
 //   demo:   sample data in memory, with sample accounts (backend/demo.js)
@@ -48,6 +49,7 @@ export function createApp({
   app.use('/api/license', licenseRoutes(api));
   app.use('/api/renew', renewRoutes(api));
   app.use('/api/payhere', payhereRoutes(api));
+  app.use('/api/zenpos', zenposRoutes(api));
   app.use('/api', (req, res) => send(res, 404, { error: { code: 'not_found', message: 'There is no API at this address.' } }));
 
   if (pages) {

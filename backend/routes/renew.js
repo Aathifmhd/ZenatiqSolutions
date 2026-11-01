@@ -19,7 +19,7 @@ const total = (sub, years) => Math.round(sub.price * years * 100) / 100;
 const renewedUntil = (sub, years, day = today()) =>
   (daysBetween(sub.ends_on, day) > sub.grace_days ? periodEnd(day, years) : addYears(sub.ends_on, years));
 // This site's address for PayHere to send people back to. On Vercel it's always the real site.
-const siteOf = (req) => {
+export const siteOf = (req) => {
   if (process.env.VERCEL) return SITE;
   const host = req.headers.host || 'localhost';
   return `${/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host) ? 'http' : 'https'}://${host}`;

@@ -1,12 +1,14 @@
 // Licences for the systems Zenatiq builds (see license.js, and the licence-check module at
 // frontend/license/zenatiq-license.mjs that goes into each system).
 // POST /api/license { key }  the project's licence: { license: "<signed>", ...what it says }
+// POST /api/license { key: "ZPOS-…", product: "zenpos", device, version }  a ZenPOS licence (core/zenpos.js)
 // GET  /api/license/key      Zenatiq's public key, for checking licences
 // The key is the project's key from its Widget tab. Any website or server may ask, so no cookies.
 import { Router } from 'express';
-import { readJson, send, fail, HttpError } from '../http.js';
+import { readJson, send, fail, clientIp, HttpError } from '../http.js';
 import { licenseFor, signLicense, publicKey } from '../license.js';
 import { ensureRenewToken } from '../core/ops.js';
+import { isZenposRequest, answerLicence } from '../core/zenpos.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -26,7 +28,9 @@ export function licenseRoutes(api) {
 
   router.post('/', async (req, res) => {
     if (api.missing().includes('MONGODB_URI')) throw new HttpError('Licences are not available yet.', 'not_configured', 503);
-    const { key } = await readJson(req);
+    const body = await readJson(req);
+    if (isZenposRequest(body)) return send(res, 200, await answerLicence(await api.store(), body, { ip: clientIp(req) }), CORS);
+    const { key } = body;
     const badKey = () => new HttpError('This project key is not valid.', 'bad_key', 403);
     if (typeof key !== 'string' || !/^[0-9a-f]{32,128}$/i.test(key)) throw badKey();
     const store = await api.store();

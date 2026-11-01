@@ -687,3 +687,10 @@ select.input{appearance:none;padding-right:46px;background-image:url("data:image
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;transition-delay:0s!important}
   .reveal-ready [data-reveal]:not(.is-in){opacity:1;transform:none}
 }
+
+/* ---------- ZenPOS (Buy ZenPOS page) ---------- */
+.zp-buy{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:clamp(20px,3vw,32px);align-items:start}
+.zp-buy .plan h2{font-size:1.45rem}
+.zp-error{padding:12px 14px;border-radius:12px;background:#fde4e2;color:#b00500;font-weight:600}
+.zp-terms{margin-top:clamp(32px,4vw,48px)}
+@media (max-width:900px){.zp-buy{grid-template-columns:1fr}}

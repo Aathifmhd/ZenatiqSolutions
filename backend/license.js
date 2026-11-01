@@ -3,7 +3,7 @@
 // (LICENSE_PRIVATE_KEY, Ed25519). The licence-check module in each system checks the signature
 // with Zenatiq's public key, so nobody can make up or edit a licence, even one saved for days
 // without internet.
-import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
+import { createPrivateKey, createPublicKey, generateKeyPairSync, hkdfSync, sign, verify } from 'node:crypto';
 import { HttpError } from './http.js';
 import { today, statusOf, graceUntil, renewUrl } from './core/renewals.js';
 
@@ -24,6 +24,11 @@ function privateKey() {
   }
   return loaded.key;
 }
+
+// A 32-byte secret for one purpose (info), derived from LICENSE_PRIVATE_KEY, so ZenPOS licence keys
+// can be kept encrypted without another setting. Signing still uses the private key itself.
+export const licenseSecret = (info) =>
+  Buffer.from(hkdfSync('sha256', privateKey().export({ format: 'der', type: 'pkcs8' }), 'zenatiq-licences', info, 32));
 
 // Zenatiq's public key (base64 SPKI DER), which client systems use to check licences.
 export const publicKey = () => createPublicKey(privateKey()).export({ format: 'der', type: 'spki' }).toString('base64');
