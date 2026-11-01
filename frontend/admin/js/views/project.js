@@ -530,14 +530,49 @@ const TABS = {
     return view === 'portal' ? portalActivity(ctx, box, project) : commitLog(ctx, box, project);
   },
 
-  // --- Widget code ---------------------------------------------------------------------
+  // --- Widget code, and the licence check for systems on a yearly subscription ----------------
   async connect(ctx, panel, project) {
-    const { db, demo } = ctx;
+    const { db, demo, isAdmin } = ctx;
+    const sub = isAdmin ? (await db.subscriptions.get(project.id)).subscription : null;
+    if (!ctx.isCurrent()) return;
     const snippet = `<!-- Contact with Zenatiq -->\n<script src="${SITE}/connect/widget.js" data-key="${project.connect_key}" defer></script>`;
     const inline = `<div id="zenatiq-connect"></div>\n<script src="${SITE}/connect/widget.js" data-key="${project.connect_key}" data-mode="inline" defer></script>`;
     const pageLink = `${SITE}/connect/?key=${project.connect_key}`;
+    const licenseKey = `ZENATIQ_KEY=${project.connect_key}`;
+    const licenseServer = [
+      "import { createLicense } from './zenatiq-license.mjs';",
+      '',
+      "const license = createLicense({ key: process.env.ZENATIQ_KEY, file: '.zenatiq-license.json' });",
+      'await license.start(); // checks now, then once a day',
+      "app.use(license.readOnlyGuard({ allow: ['/api/login', '/api/logout'] }));",
+      "app.get('/api/license', (req, res) => res.json(license.state()));",
+    ].join('\n');
+    const licenseBanner = [
+      "fetch('/api/license').then((r) => r.json()).then((s) => {",
+      '  if (!s.message) return;',
+      "  const bar = document.createElement('div');",
+      "  bar.style.cssText = 'position:sticky;top:0;z-index:9999;padding:10px 16px;background:#b3261e;color:#fff;font:14px sans-serif;text-align:center';",
+      "  bar.textContent = s.message + ' ';",
+      "  if (s.renewUrl) bar.append(Object.assign(document.createElement('a'), { href: s.renewUrl, target: '_blank', textContent: 'Renew now', style: 'color:#fff;font-weight:bold' }));",
+      '  document.body.prepend(bar);',
+      '});',
+    ].join('\n');
+    // What the licence says today, for owners and admins (members can't see subscriptions).
+    const LICENSE_SAYS = {
+      active: 'The system works normally.',
+      ending: 'The system shows a renewal banner.',
+      grace: 'The system shows a renewal banner, and goes read-only when the grace days run out.',
+      expired: 'The system is read-only until the client renews.',
+      cancelled: 'Cancelled: the system goes read-only once its paid days and grace days run out.',
+    };
+    const licenseStatus = !isAdmin ? '' : sub
+      ? html`<p class="licence__status ${{ active: 'is-on', grace: 'is-due', expired: 'is-due' }[sub.status] || ''}">${icon(sub.status === 'active' ? 'check' : 'clock')}<span>
+          <b>${sub.package}</b>, paid until ${fmtDate(sub.ends_on)}. ${LICENSE_SAYS[sub.status] || ''}</span></p>`
+      : html`<p class="licence__status">${icon('clock')}<span>No yearly subscription yet, so the licence counts this project as a one-time purchase and the system never goes read-only.
+          <a href="#/projects/${project.id}/payments">Set one up on the Payments tab</a>.</span></p>`;
     mount(panel, html`
       <div class="connect">
+        <div class="connect__main">
         <section class="card">
           <header class="card__head"><h2>Contact with Zenatiq</h2>
             <label class="switch"><input type="checkbox" data-change="toggle" ${project.connect_enabled ? 'checked' : ''}><span>${project.connect_enabled ? 'On' : 'Off'}</span></label></header>
@@ -552,6 +587,23 @@ const TABS = {
           <div class="code"><pre>${pageLink}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="link">${icon('copy')}Copy</button></div>
           <p class="hint">React apps: put the script tag in <code>index.html</code>. The key only works for this project, so keep it inside the client's logged-in admin area.</p>
         </section>
+        <section class="card licence" id="licence">
+          <header class="card__head"><h2>Licence check</h2>${sub ? pill('sub', sub.status) : ''}</header>
+          <p>For a system on a yearly subscription, such as a POS. Its server asks Zenatiq once a day whether the subscription is paid, shows a banner when renewal is due, and goes read-only once the grace days run out. Staff can still sign in, look things up and export their data.</p>
+          ${licenseStatus}
+          <ol class="steps-sm">
+            <li><b>Download the licence check</b> and put it in the system's server folder. It needs Node.js 18 or newer, and nothing else.</li>
+          </ol>
+          <a class="btn btn--ghost btn--sm" href="${SITE}/license/zenatiq-license.mjs" download="zenatiq-license.mjs">Download zenatiq-license.mjs</a>
+          <ol class="steps-sm" start="2"><li><b>Add this project's key</b> to the server's settings, in its <code>.env</code> file or its hosting settings:</li></ol>
+          <div class="code"><pre>${licenseKey}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="licenseKey">${icon('copy')}Copy</button></div>
+          <ol class="steps-sm" start="3"><li><b>Add the check</b> to the server's main file (Express). Change the two paths to the system's own sign-in and sign-out addresses:</li></ol>
+          <div class="code"><pre>${licenseServer}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="licenseServer">${icon('copy')}Copy</button></div>
+          <ol class="steps-sm" start="4"><li><b>Show the banner</b> in the admin panel. Skip this if the floating Contact with Zenatiq button is there: it already shows one.</li></ol>
+          <div class="code"><pre>${licenseBanner}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="licenseBanner">${icon('copy')}Copy</button></div>
+          <p class="hint">While the system is read-only, saving anything gets a <code>402</code> reply: show its <code>error.message</code> to the user. Add <code>.zenatiq-license.json</code> to <code>.gitignore</code>, and on Vercel leave out <code>file</code>. A system without its own Node.js server, such as a React app that talks straight to Firebase, can't run the check: the floating Contact with Zenatiq button still shows renewal banners there.</p>
+        </section>
+        </div>
         <aside class="ov__side">
           <section class="card">
             <h2>See what the client sees</h2>
@@ -562,12 +614,12 @@ const TABS = {
           </section>
           <section class="card">
             <h2>Key</h2>
-            <p class="small muted">If the key ends up somewhere public, make a new one. The old code stops working straight away.</p>
+            <p class="small muted">If the key ends up somewhere public, make a new one. The old code stops working straight away, and so does the licence check until the new key is in the system's settings.</p>
             <button class="btn btn--danger-ghost btn--sm" type="button" data-act="rekey">${icon('a-key')}Make a new key</button>
           </section>
         </aside>
       </div>`, {
-      copy: (btn) => copyText({ snippet, inline, link: pageLink }[btn.dataset.what], 'Copied'),
+      copy: (btn) => copyText({ snippet, inline, link: pageLink, licenseKey, licenseServer, licenseBanner }[btn.dataset.what], 'Copied'),
       toggle: async (box) => {
         try { await db.projects.update(project.id, { connect_enabled: box.checked }); toast(box.checked ? 'Contact with Zenatiq is on' : 'Contact with Zenatiq is off'); render(ctx); }
         catch (err) { toast(friendly(err), 'error'); box.checked = !box.checked; }

@@ -189,9 +189,9 @@ Anyone with `LICENSE_PRIVATE_KEY` could make a licence for any system, so guard 
 2. Put the new public key it prints into `ZENATIQ_PUBLIC_KEY` in `frontend/license/zenatiq-license.mjs`.
 3. Update Vercel and the module in every client system.
 
-**Add the check to a system.** Try it on one system first, such as Cargo POS. It needs a Node.js 18 server, such as an Express API.
+**Add the check to a system.** Try it on one system first, such as Cargo POS. It needs a Node.js 18 server, such as an Express API. Everything below is also on the project's **Widget** tab, under **Licence check**, with the project's own key filled in and a **Copy** button for each part.
 1. Copy `frontend/license/zenatiq-license.mjs` into the system's server code. It's also at https://www.zenatiqsolutions.com/license/zenatiq-license.mjs.
-2. On the system's server, set `ZENATIQ_KEY` to the project's key: the `data-key` value on its **Widget** tab.
+2. On the system's server, set `ZENATIQ_KEY` to the project's key, which the **Licence check** section shows.
 3. In the server:
 
    ```js

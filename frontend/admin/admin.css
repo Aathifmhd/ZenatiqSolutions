@@ -376,9 +376,10 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
 .renewpage{display:grid;gap:14px;margin-top:18px}
 .renewpage .card__head{margin-bottom:0}
 .renewpage__setup{display:grid;gap:8px}
-.renewpage__setup li{display:flex;align-items:flex-start;gap:8px;color:var(--muted);font-size:.88rem}
-.renewpage__setup li.is-on{color:var(--ok)}
-.renewpage__setup .i{flex:none;width:16px;height:16px;margin-top:2px}
+.renewpage__setup li,.licence__status{display:flex;align-items:flex-start;gap:8px;color:var(--muted);font-size:.88rem}
+.renewpage__setup li.is-on,.licence__status.is-on{color:var(--ok)}
+.licence__status.is-due{color:var(--red-deep)}
+.renewpage__setup .i,.licence__status .i{flex:none;width:16px;height:16px;margin-top:2px}
 .renewpage__bank{display:grid;gap:10px;justify-items:start}
 .renewpage__bank .field{width:100%;max-width:520px}
 .money__summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:center;gap:16px 24px}
@@ -430,6 +431,8 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
 
 /* ---------- widget tab ---------- */
 .connect{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(260px,1fr);gap:16px;align-items:start}
+.connect__main{display:grid;gap:16px;min-width:0}
+.licence__status{margin-bottom:4px}
 .connect p{margin-bottom:12px}
 .connect h2{margin-bottom:8px}
 .steps-sm{margin:16px 0 8px;padding-left:20px;list-style:decimal}

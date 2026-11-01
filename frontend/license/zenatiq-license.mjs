@@ -103,7 +103,7 @@ export function createLicense({
     const l = saved?.licence;
     if (!l) {
       return { status: 'unknown', readOnly: false, verified: false, stale: true, package: null, paidUntil: null, graceUntil: null, renewUrl: null,
-        message: problem ? `${problem}. The system keeps working until it can check.` : null };
+        message: problem ? `${problem.replace(/[.\s]+$/, '')}. The system keeps working until it can check.` : null };
     }
     const today = dayOf(at);
     let status = l.status;
