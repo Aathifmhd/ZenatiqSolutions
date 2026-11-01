@@ -601,7 +601,7 @@ const TABS = {
           <div class="code"><pre>${licenseServer}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="licenseServer">${icon('copy')}Copy</button></div>
           <ol class="steps-sm" start="4"><li><b>Show the banner</b> in the admin panel. Skip this if the floating Contact with Zenatiq button is there: it already shows one.</li></ol>
           <div class="code"><pre>${licenseBanner}</pre><button class="btn btn--ghost btn--sm" type="button" data-act="copy" data-what="licenseBanner">${icon('copy')}Copy</button></div>
-          <p class="hint">While the system is read-only, saving anything gets a <code>402</code> reply: show its <code>error.message</code> to the user. Add <code>.zenatiq-license.json</code> to <code>.gitignore</code>, and on Vercel leave out <code>file</code>. A system without its own Node.js server, such as a React app that talks straight to Firebase, can't run the check: the floating Contact with Zenatiq button still shows renewal banners there.</p>
+          <p class="hint">While the system is read-only, saving anything gets a <code>402</code> reply: show its <code>error.message</code> to the user. Add <code>.zenatiq-license.json</code> to <code>.gitignore</code>. On Vercel, leave out <code>file</code> and the <code>await license.start()</code> line: the guard then checks with the first request (Vercel can pause a server while it loads, which freezes a check started then). A system without its own Node.js server, such as a React app that talks straight to Firebase, can't run the check: the floating Contact with Zenatiq button still shows renewal banners there.</p>
         </section>
         </div>
         <aside class="ov__side">

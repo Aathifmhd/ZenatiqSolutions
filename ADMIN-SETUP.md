@@ -190,6 +190,8 @@ Anyone with `LICENSE_PRIVATE_KEY` could make a licence for any system, so guard 
 3. Update Vercel and the module in every client system.
 
 **Add the check to a system.** Try it on one system first, such as Cargo POS. It needs a Node.js 18 server, such as an Express API. Everything below is also on the project's **Widget** tab, under **Licence check**, with the project's own key filled in and a **Copy** button for each part.
+
+On Vercel, or any host that pauses the server between requests, leave out `file` and the `await license.start()` line. The guard then checks with the first request, and again when a check is due. A check started while Vercel loads the server can be frozen until it times out, which GMS Hardware ran into.
 1. Copy `frontend/license/zenatiq-license.mjs` into the system's server code. It's also at https://www.zenatiqsolutions.com/license/zenatiq-license.mjs.
 2. On the system's server, set `ZENATIQ_KEY` to the project's key, which the **Licence check** section shows.
 3. In the server:

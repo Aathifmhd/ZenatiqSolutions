@@ -239,6 +239,14 @@ test('a failed check says why, and the next request after 10 minutes tries again
   await new Promise((resolve) => counting({ method: 'GET', path: '/' }, {}, resolve));
   assert.equal(asked, true, 'and then on the next request, even without the daily timer');
 });
+test('without start(), as on Vercel, the guard checks with the first request', async () => {
+  let asked = 0;
+  const license = createLicense({ key: pos.connect_key, url: `${base}/api/license`, publicKey: keys.publicKey, fetch: (url, options) => { asked++; return fetch(url, options); } });
+  const guard = license.readOnlyGuard();
+  assert.equal(asked, 0, 'nothing while the server loads');
+  await new Promise((resolve) => guard({ method: 'GET', path: '/' }, {}, resolve));
+  assert.ok(asked === 1 && license.state().verified, 'checked with the first request');
+});
 
 // --- The renewal page --------------------------------------------------------------------------------
 test('the renewal page shows what is due, the bank details, and the years to choose from', async () => {

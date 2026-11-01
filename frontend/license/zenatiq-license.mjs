@@ -16,6 +16,9 @@
  *   license.state();                          // { status, readOnly, message, renewUrl, ... } for banners
  *   await license.refresh();                  // checks again now, for example when someone signs in
  *
+ * On Vercel and other hosts that pause the server between requests, leave out `file` and start(): the
+ * guard checks with the first request instead, since a check started while the server loads can be frozen.
+ *
  * ZENATIQ_KEY is the project's key from its Widget tab in the Zenatiq admin portal.
  */
 import { createPublicKey, verify } from 'node:crypto';
