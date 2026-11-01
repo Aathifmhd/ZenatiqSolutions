@@ -580,6 +580,11 @@ a:hover .shot img,.project:hover .shot img{transform:scale(1.025)}
 .svc__buy .price b{font-size:2rem}
 .svc__eg{margin-top:18px;font-size:.97rem;color:var(--muted)}
 .svc__eg a{font-weight:600;color:var(--ink)}
+.svc__zenpos{display:flex;align-items:center;gap:14px;margin-top:20px;padding:16px 18px;border-radius:var(--radius);background:var(--sand);color:var(--text);text-decoration:none;transition:background-color .2s}
+.svc__zenpos:hover{background:var(--sand-2)}
+.svc__zenpos b{color:var(--ink)}
+.svc__zenpos .icon{flex:none;width:22px;height:22px;color:var(--red)}
+.svc__zenpos .icon--arrow{margin-left:auto;color:var(--ink)}
 @media (max-width:1000px){.svc__grid{grid-template-columns:1fr}.svc--flip .svc__visual{order:0}}
 
 .industries{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
