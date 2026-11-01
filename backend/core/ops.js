@@ -644,7 +644,7 @@ export function createPortal(store, { mailer, github } = {}) {
       return {
         today: day, subscriptions: withTokens.map((s) => withStatus(s, day)), remindersRanAt: job?.last_auto_run_at ?? null,
         // What's switched on in Vercel's settings: online payments, and licences for client systems.
-        setup: { ...payhereStatus(), licenses: Boolean(process.env.LICENSE_PRIVATE_KEY?.trim()) },
+        setup: { ...payhereStatus(), licenses: Boolean(process.env.LICENSE_PRIVATE_KEY?.trim()), reminders: Boolean(process.env.CRON_SECRET?.trim()) },
       };
     },
     // One project's subscription (or null) and its renewals, newest first.

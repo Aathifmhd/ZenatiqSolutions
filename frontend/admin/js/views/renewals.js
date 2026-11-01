@@ -56,7 +56,9 @@ export async function render(ctx) {
       <footer class="renewals__job">
         <p class="small muted">${icon('a-send')}<span>${remindersRanAt
           ? html`Reminder emails last went out automatically ${ago(remindersRanAt)}. They go 30, 14, 7 and 1 days before a subscription is due, and when it ends.`
-          : html`Automatic reminder emails haven't run yet. They start once <code>CRON_SECRET</code> is set in Vercel (see ADMIN-SETUP.md).`}</span></p>
+          : setup.reminders
+            ? html`Automatic reminder emails haven't run yet. <code>CRON_SECRET</code> is set, so they start with Vercel's next daily run, at about 8:00. To run it now, choose <b>Run</b> in Vercel under Settings → Cron Jobs.`
+            : html`Automatic reminder emails are off: this deployment doesn't have <code>CRON_SECRET</code>. Add it in Vercel, then redeploy (see ADMIN-SETUP.md).`}</span></p>
         <button class="btn btn--ghost btn--sm" type="button" data-act="run">Send today's reminders now</button>
       </footer>
     </section>

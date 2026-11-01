@@ -82,7 +82,8 @@ test('setting up: a POS on a yearly package, and a website bought once', async (
   assert.equal(sub.renew_url, `https://www.zenatiqsolutions.com/renew?t=${token}`);
   assert.match(pos.connect_key, /^[0-9a-f]{32,}$/);
   const { setup } = await run(owner, 'subscriptions.list');
-  assert.deepEqual(setup, { online: false, sandbox: false, licenses: true }, 'the Renewals page says what is switched on');
+  assert.deepEqual(setup, { online: false, sandbox: false, licenses: true, reminders: false }, 'the Renewals page says what is switched on');
+  await withEnv({ CRON_SECRET: 'cron-test-secret' }, async () => assert.equal((await run(owner, 'subscriptions.list')).setup.reminders, true));
 });
 
 // --- Licences ------------------------------------------------------------------------------------
