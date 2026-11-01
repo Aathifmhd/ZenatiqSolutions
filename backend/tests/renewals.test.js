@@ -125,6 +125,7 @@ test('cancelling stops reminders; recording a renewal restarts it', async () => 
   outbox.length = 0;
   assert.deepEqual((await run(owner, 'subscriptions.runReminders')).sent, []);
   assert.equal(outbox.length, 0);
+  assert.equal((await run(owner, 'subscriptions.list')).remindersRanAt, null, "sending by hand isn't the automatic job");
   assert.equal((await run(owner, 'subscriptions.renew', { projectId: project.id })).status, 'active');
 });
 test("'Email a reminder now' goes to the subscription's email, or else the client's", async () => {

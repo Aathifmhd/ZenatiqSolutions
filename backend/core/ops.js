@@ -210,7 +210,7 @@ export function createPortal(store, { mailer, github } = {}) {
   }
 
   // Every renewal reminder due today (see renewals.js). Each one goes once, so running this
-  // again on the same day sends nothing new.
+  // again on the same day sends nothing new. Without me, it's Vercel's daily job.
   async function sendDueReminders(me = null) {
     const day = today();
     const result = { day, sent: [], failed: [] };
@@ -226,7 +226,7 @@ export function createPortal(store, { mailer, github } = {}) {
       }
     }
     await col('jobs').updateOne({ id: 'renewal-reminders' }, {
-      $set: { last_run_at: now(), last_day: day, sent: result.sent.length, failed: result.failed.length },
+      $set: { last_run_at: now(), last_day: day, sent: result.sent.length, failed: result.failed.length, ...(me ? {} : { last_auto_run_at: now() }) },
     }, { upsert: true });
     return result;
   }
@@ -642,7 +642,7 @@ export function createPortal(store, { mailer, github } = {}) {
       const [subs, job] = await Promise.all([find('subscriptions'), one('jobs', { id: 'renewal-reminders' })]);
       const withTokens = await Promise.all(subs.map((s) => ensureRenewToken(store, s)));
       return {
-        today: day, subscriptions: withTokens.map((s) => withStatus(s, day)), remindersRanAt: job?.last_run_at ?? null,
+        today: day, subscriptions: withTokens.map((s) => withStatus(s, day)), remindersRanAt: job?.last_auto_run_at ?? null,
         // What's switched on in Vercel's settings: online payments, and licences for client systems.
         setup: { ...payhereStatus(), licenses: Boolean(process.env.LICENSE_PRIVATE_KEY?.trim()) },
       };
