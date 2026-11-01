@@ -363,6 +363,8 @@ a.stat:hover{border-color:var(--ink);transform:translateY(-2px)}
 .subcard .is-due{color:var(--red-deep)}
 .subcard__actions{display:flex;flex-wrap:wrap;gap:8px;padding-top:14px;border-top:1px solid var(--line)}
 .subcard__history summary{width:max-content;cursor:pointer;color:var(--muted);font-size:.86rem;font-weight:600}
+.prompt__body summary{width:max-content;margin:4px 0 10px;cursor:pointer;color:var(--muted);font-size:.86rem;font-weight:600}
+.prompt__body .code pre{max-height:420px;padding-right:16px;overflow:auto}
 .subcard__history .plist{margin-top:8px}
 .subcard__empty{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px}
 .subcard__empty h2{margin-bottom:4px}

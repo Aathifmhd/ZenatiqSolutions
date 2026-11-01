@@ -13,7 +13,7 @@
  *   await license.start();                    // checks now, then once a day
  *   app.use(license.readOnlyGuard({ allow: ['/login', '/logout'] }));  // Express: no changes when read-only,
  *                                             // and checks again when due (a failed check: 10 minutes later)
- *   license.state();                          // { status, readOnly, message, renewUrl, ... } for banners
+ *   license.state();                          // { status, package, price, paidUntil, message, renewUrl, ... }
  *   await license.refresh();                  // checks again now, for example when someone signs in
  *
  * On Vercel and other hosts that pause the server between requests, leave out `file` and start(): the
@@ -108,7 +108,7 @@ export function createLicense({
     if (saved && at > saved.lastSeen) saved.lastSeen = at;
     const l = saved?.licence;
     if (!l) {
-      return { status: 'unknown', readOnly: false, verified: false, stale: true, package: null, paidUntil: null, graceUntil: null, renewUrl: null,
+      return { status: 'unknown', readOnly: false, verified: false, stale: true, package: null, price: null, currency: null, paidUntil: null, graceUntil: null, renewUrl: null, checkedAt: null,
         message: problem ? `${problem.replace(/[.\s]+$/, '')}. The system keeps working until it can check.` : null };
     }
     const today = dayOf(at);
@@ -120,7 +120,8 @@ export function createLicense({
     const readOnly = Boolean(l.grace_until) && today > l.grace_until;
     const stale = at > Date.parse(l.check_by);
     return {
-      status, readOnly, verified: true, stale, package: l.package, paidUntil: l.paid_until, graceUntil: l.grace_until, renewUrl: l.renew_url,
+      status, readOnly, verified: true, stale, package: l.package, price: l.price ?? null, currency: l.currency ?? null,
+      paidUntil: l.paid_until, graceUntil: l.grace_until, renewUrl: l.renew_url, checkedAt: saved.checkedAt ? new Date(saved.checkedAt).toISOString() : null,
       message: messageFor(status, l, today, readOnly, stale),
     };
   }

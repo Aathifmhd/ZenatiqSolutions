@@ -110,6 +110,8 @@ npm run member -- password you@example.com
    - **A link**: for systems where you can't add code (for example the Odoo POS at Regal Hardware). Add it as a menu item or bookmark.
 3. Use **Open the client view** on the same tab to send yourself a test message.
 
+**Or let an AI assistant do it all.** At the top of the **Widget** tab, **Copy the prompt** and paste it into Claude Code (or another AI coding assistant) working in the client system's code. It adds the [licence check](#licences-for-client-systems), the renewal banner, and a **Contact Zenatiq** section, last in the system's menu, with the subscription details and the messages with Zenatiq, as in GMS Hardware's system. The project's key and details are filled in, so paste it only into tools you trust. Then set `ZENATIQ_KEY` on the system's host.
+
 Each project has its own secret key. A key only reaches that project's conversations, and each project is limited to 30 client messages an hour. If a key ends up somewhere public, click **Make a new key** and paste the new code. The same key is the system's licence key, so update `ZENATIQ_KEY` too (see [Licences](#licences-for-client-systems)).
 
 For a project with a yearly subscription, the widget also has a **Subscription** tab with the package, the "paid until" date and a **Renew now** button. When renewal is due within 30 days or overdue, the floating button shows a banner across the top of the page, which clients can hide for the day. To never show the banner, add `data-banner="off"` to the script tag.
@@ -189,7 +191,7 @@ Anyone with `LICENSE_PRIVATE_KEY` could make a licence for any system, so guard 
 2. Put the new public key it prints into `ZENATIQ_PUBLIC_KEY` in `frontend/license/zenatiq-license.mjs`.
 3. Update Vercel and the module in every client system.
 
-**Add the check to a system.** Try it on one system first, such as Cargo POS. It needs a Node.js 18 server, such as an Express API. Everything below is also on the project's **Widget** tab, under **Licence check**, with the project's own key filled in and a **Copy** button for each part.
+**Add the check to a system.** The quickest way is the prompt at the top of the project's **Widget** tab (see [Connect a client's website](#5-connect-a-clients-website-contact-with-zenatiq)). By hand: it needs a Node.js 18 server, such as an Express API. Everything below is also on the project's **Widget** tab, under **Licence check**, with the project's own key filled in and a **Copy** button for each part.
 
 On Vercel, or any host that pauses the server between requests, leave out `file` and the `await license.start()` line. The guard then checks with the first request, and again when a check is due. A check started while Vercel loads the server can be frozen until it times out, which GMS Hardware ran into.
 1. Copy `frontend/license/zenatiq-license.mjs` into the system's server code. It's also at https://www.zenatiqsolutions.com/license/zenatiq-license.mjs.

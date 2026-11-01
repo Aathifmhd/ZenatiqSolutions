@@ -47,6 +47,8 @@ export function licenseFor(project, sub, { day = today(), now = new Date() } = {
     project: project.id,
     name: project.name,
     package: sub?.package ?? null,
+    price: sub?.price ?? null,
+    currency: sub?.currency ?? null,
     status,
     paid_until: sub?.ends_on ?? null,
     grace_until: lastDay,

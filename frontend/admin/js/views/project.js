@@ -7,6 +7,7 @@ import {
   taskModal, projectModal, quoteModal, paymentModal, clientModal, renderConversation, threadRow, activityRow,
   subscriptionModal, renewModal, paidUntilSays,
 } from './parts.js';
+import { setupPrompt } from './setup-prompt.js';
 
 const SITE = ['localhost', '127.0.0.1'].includes(location.hostname) ? location.origin : 'https://www.zenatiqsolutions.com';
 
@@ -532,9 +533,10 @@ const TABS = {
 
   // --- Widget code, and the licence check for systems on a yearly subscription ----------------
   async connect(ctx, panel, project) {
-    const { db, demo, isAdmin } = ctx;
+    const { db, demo, isAdmin, store } = ctx;
     const sub = isAdmin ? (await db.subscriptions.get(project.id)).subscription : null;
     if (!ctx.isCurrent()) return;
+    const prompt = setupPrompt({ project, client: store.client(project.client_id), sub, isAdmin });
     const snippet = `<!-- Contact with Zenatiq -->\n<script src="${SITE}/connect/widget.js" data-key="${project.connect_key}" defer></script>`;
     const inline = `<div id="zenatiq-connect"></div>\n<script src="${SITE}/connect/widget.js" data-key="${project.connect_key}" data-mode="inline" defer></script>`;
     const pageLink = `${SITE}/connect/?key=${project.connect_key}`;
@@ -573,6 +575,13 @@ const TABS = {
     mount(panel, html`
       <div class="connect">
         <div class="connect__main">
+        <section class="card prompt" id="prompt">
+          <header class="card__head"><h2>Prompt for an AI assistant</h2>
+            <button class="btn btn--primary btn--sm" type="button" data-act="copy" data-what="setupPrompt">${icon('copy')}Copy the prompt</button></header>
+          <p>Paste this into Claude Code, or another AI coding assistant, working in <b>${project.name}</b>'s code. It adds the licence check and the renewal banner, plus a <b>Contact Zenatiq</b> section, last in the menu, with the subscription details and the messages with Zenatiq. This project's details are already filled in.</p>
+          <details class="prompt__body"><summary>Show the prompt</summary><div class="code"><pre>${prompt}</pre></div></details>
+          <p class="hint">It contains this project's key, so paste it only into tools you trust. Afterwards, set <code>ZENATIQ_KEY</code> on the system's host for Production. The steps below do the same by hand.</p>
+        </section>
         <section class="card">
           <header class="card__head"><h2>Contact with Zenatiq</h2>
             <label class="switch"><input type="checkbox" data-change="toggle" ${project.connect_enabled ? 'checked' : ''}><span>${project.connect_enabled ? 'On' : 'Off'}</span></label></header>
@@ -619,7 +628,7 @@ const TABS = {
           </section>
         </aside>
       </div>`, {
-      copy: (btn) => copyText({ snippet, inline, link: pageLink, licenseKey, licenseServer, licenseBanner }[btn.dataset.what], 'Copied'),
+      copy: (btn) => copyText({ snippet, inline, link: pageLink, licenseKey, licenseServer, licenseBanner, setupPrompt: prompt }[btn.dataset.what], 'Copied'),
       toggle: async (box) => {
         try { await db.projects.update(project.id, { connect_enabled: box.checked }); toast(box.checked ? 'Contact with Zenatiq is on' : 'Contact with Zenatiq is off'); render(ctx); }
         catch (err) { toast(friendly(err), 'error'); box.checked = !box.checked; }

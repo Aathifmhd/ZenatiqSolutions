@@ -92,7 +92,7 @@ test("a licence says what the subscription allows, and is signed so it can't be 
   const project = { id: 'p1', name: 'Cargo POS' };
   const l = licenseFor(project, sub, { day: '2026-12-20', now: new Date('2026-12-20T04:00:00Z') });
   assert.deepEqual(l, {
-    v: 1, project: 'p1', name: 'Cargo POS', package: 'POS Business', status: 'ending', paid_until: '2026-12-31',
+    v: 1, project: 'p1', name: 'Cargo POS', package: 'POS Business', price: null, currency: null, status: 'ending', paid_until: '2026-12-31',
     grace_until: '2027-01-14', read_only: false, renew_url: `https://www.zenatiqsolutions.com/renew?t=${'ab'.repeat(24)}`,
     issued_at: '2026-12-20T04:00:00.000Z', check_by: '2026-12-27T04:00:00.000Z',
   });
@@ -144,6 +144,7 @@ test('the licence check: asks Zenatiq, then keeps working from its saved licence
   const options = { key: pos.connect_key, file, url: `${base}/api/license`, publicKey: keys.publicKey, now: () => clock };
   const online = await createLicense(options).refresh();
   assert.ok(online.verified && online.status === 'active' && !online.readOnly && !online.stale && online.message === null, JSON.stringify(online));
+  assert.ok(online.package === 'POS Business' && online.price === 25000 && online.currency === 'LKR' && Date.parse(online.checkedAt) === clock, 'the details for a subscription page');
   assert.ok(JSON.parse(await readFile(file, 'utf8')).token, 'saved for when the internet drops');
 
   const offline = createLicense({ ...options, fetch: async () => { throw new Error('no internet'); } });
